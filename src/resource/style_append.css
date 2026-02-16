@@ -1,0 +1,25 @@
+
+.param-block {
+    child-space: 10px;
+    /* align-items: center; */
+    col-between: 5px;
+    width: auto;
+}
+
+.trigger-button {
+    background-color: #d23519;
+    color: #ffffff;
+    border-radius: 5px;
+    font-size: 20px;
+    font-family: "Orbitron";
+    border-width: 2px;
+    border-color: #ffffff;
+}
+
+.trigger-button:hover {
+    background-color: #ff5733;
+}
+
+.trigger-button:active {
+    background-color: #900d0d;
+}

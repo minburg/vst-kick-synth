@@ -1,0 +1,35 @@
+[package]
+name = "kick_synth"
+version = "0.1.11"
+edition = "2021"
+authors = ["Marinus Burger <convolution_official@protonmail.com>"]
+license = "GPL-3.0-or-later"
+homepage = "https://github.com/minburg/vst-tape-delay"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["standalone", "vst3"] }
+nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git" }
+parking_lot = "0.12.5"
+rand = "0.10.0-rc.6"
+webbrowser = "1.0"
+
+[patch."https://github.com/RustAudio/baseview.git"]
+baseview = { path = "./baseview-master" }
+
+[patch."https://github.com/robbert-vdh/vizia.git"]
+vizia = { path = "./vizia-patched" }
+
+[workspace]
+members = [
+    "xtask",
+]
+
+[profile.release]
+lto = "thin"
+strip = true
+
+[profile.dev.package."*"]
+opt-level = 3

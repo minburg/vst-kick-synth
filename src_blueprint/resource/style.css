@@ -1,0 +1,259 @@
+.main-gui {
+    /*background-color: #1e1e1e;*/
+    background-image: url("background_image.png");
+    background-size: cover;
+}
+
+.knob-section {
+    background-color: rgba(40, 12, 85, 0);
+    /*child-space: 50px;*/
+    width: 1s;
+    col-between: 60px;
+    /* This adds padding to the far left and far right of the whole row */
+    child-left: 60px;
+    child-right: 60px;
+    child-bottom: 20px;
+}
+
+.link-section {
+    /*background-color: rgba(109, 44, 213, 0.78);*/
+
+    width: 1s;
+    col-between: 40px;
+    /* This adds padding to the far left and far right of the whole row */
+    child-left: 100px;
+    child-right: 100px;
+}
+
+.meter-section {
+    background-color: rgba(40, 12, 85, 0);
+    /*child-space: 50px;*/
+    width: 1s;
+    col-between: 40px;
+    /* This adds padding to the far left and far right of the whole row */
+    child-left: 100px;
+    child-right: 100px;
+    /*child-bottom: 20px;*/
+
+    border-radius: 0px;
+    border-width: 1px;
+    border-color: rgba(126, 126, 126, 0);
+}
+
+.vu-meter {
+    background-color: rgba(0, 0, 0, 0.47);
+    color: #d28819;
+    font-size: 18.0;
+    font-family: "Comfortaa";
+}
+
+.vu-meter-no-text {
+    background-color: rgba(0, 0, 0, 0.47);
+    color: rgba(210, 136, 25, 0);
+    font-size: 18.0;
+    font-family: "Comfortaa";
+}
+
+.title-section {
+    width: 1s;
+    height: 180px;
+}
+
+.header-title {
+    background-color: #512540;
+
+    color: #d28819;
+    font-size: 65.0;
+    font-weight: bold;
+    font-family: "Comfortaa";
+}
+
+.header-version-title {
+    background-color: #512540;
+
+    color: #d28819;
+    font-size: 25.0;
+    font-weight: bold;
+    font-family: "Comfortaa";
+}
+
+.knob-container {
+    width: 1s;
+    /*child_space: 1s;*/
+    /*height: 1s;*/
+    background-color: rgba(0, 0, 0, 0.47);
+    border-radius: 80px;
+    border-width: 3px;
+    border-color: rgb(126, 126, 126);
+}
+
+.portion {
+    width: 1s;
+    background-color: rgba(52, 66, 89, 0);
+    border-width: 0px;
+    border-color: #934aff;
+}
+
+.knob-arc {
+    background-color: #74355C;
+    color: #d28819;
+}
+
+.knob-hitbox {
+    background-color: rgba(0, 0, 0, 0.5);
+    border-radius: 50%;
+}
+
+.param-label {
+    color: #d28819;
+    font-size: 28.0;
+    font-family: "Orbitron";
+}
+
+.single-knob-label {
+    color: #d28819;
+    font-size: 15.0;
+    font-family: "Comfortaa";
+}
+
+.single-knob-arc {
+    background-color: #74355C;
+    color: #d28819;
+}
+
+.single-knob-hitbox {
+    background-color: rgba(0, 0, 0, 0);
+    border-radius: 50%;
+}
+
+.finetune-section {
+    col-between: 60px;
+    child-left: 400px;
+    child-right: 400px;
+    child-bottom: 20px;
+    child-top: 20px;
+}
+.finetune-section-inner {
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 8px;
+    border-width: 2px;
+    border-color: rgba(126, 126, 126, 1.0);
+}
+
+.update-link {
+    /* Make it look clickable */
+    cursor: pointer;
+    color: #d28819;
+    font-size: 20.0;
+    font-weight: bold;
+    font-family: "Comfortaa";
+}
+
+.update-link:hover {
+    background-color: #512540;
+}
+
+.update-link:active {
+    color: #ffffff; /* Flash white when clicked */
+}
+
+.insta-button {
+    background-image: url("insta.png");
+    background-size: cover;
+    width: 35px;
+    height: 35px;
+    cursor: pointer;
+}
+
+.spotify-button {
+    background-image: url("spotify.png");
+    background-size: cover;
+    width: 35px;
+    height: 35px;
+    cursor: pointer;
+}
+
+/*---------------------------------------------------------------*/
+
+.broken-param-button {
+    border-width: 1px;
+    border-color: #000000;
+
+    background-color: #512540;
+    color: #d28819;
+    font-size: 30.0;
+    font-weight: bold;
+    font-family: "Comfortaa";
+}
+
+.broken-param-button:hover {
+    background-color: rgba(81, 37, 64, 0.5);
+    color: #d28819;
+}
+
+.broken-param-button.active {
+    background-color: #d23519;
+    color: #512540;
+}
+
+.broken-param-button.active:hover {
+    background-color: rgba(210, 53, 25, 0.5);
+    color: #512540;
+}
+
+/*---------------------------------------------------------------*/
+
+.sync-param-button {
+    border-width: 1px;
+    border-color: #000000;
+
+    background-color: #512540;
+    color: #d28819;
+    font-size: 30.0;
+    font-weight: bold;
+    font-family: "Comfortaa";
+}
+
+.sync-param-button:hover {
+    background-color: rgba(81, 37, 64, 0.5);
+    color: #d28819;
+}
+
+.sync-param-button.active {
+    background-color: #d28819;
+    color: #512540;
+}
+
+.sync-param-button.active:hover {
+    background-color: rgba(210, 136, 25, 0.5);
+    color: #512540;
+}
+
+/*---------------------------------------------------------------*/
+
+.distortion-param-button {
+    border-width: 1px;
+    border-color: #000000;
+
+    background-color: #915607;
+    color: #272727;
+    border-radius: 15px;
+    font-size: 28.0;
+    /*font-weight: bold;*/
+    font-family: "Orbitron";
+}
+
+.distortion-param-button:hover {
+    background-color: rgba(145, 86, 7, 0.5);
+    color: #272727;
+}
+
+.distortion-param-button.active {
+    background-color: #d23519;
+    color: #512540;
+}
+
+.distortion-param-button.active:hover {
+    background-color: rgba(210, 53, 25, 0.5);
+    color: #512540;
+}

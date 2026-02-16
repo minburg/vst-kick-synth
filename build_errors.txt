@@ -1,0 +1,1256 @@
+﻿cargo : warning: unused import: `impl_generational_id`
+At line:1 char:1
++ cargo check -p kick_synth 2>&1 | Out-File -FilePath 
+build_errors.txt  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (warning: unused...ener 
+   ational_id`:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+  --> vizia-patched\crates\vizia_id\src\generational_id.rs:99:9
+   |
+99 | pub use impl_generational_id;
+   |         ^^^^^^^^^^^^^^^^^^^^
+   |
+   = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on 
+by default
+
+warning: `vizia_id` (lib) generated 1 warning (run `cargo fix --lib 
+-p vizia_id` to apply 1 suggestion)
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_style\selectors\parser.rs:64:26
+   |
+64 | fn to_ascii_lowercase(s: &str) -> Cow<str> {
+   |                          ^^^^     ^^^^^^^^ the same lifetime 
+is hidden here
+   |                          |
+   |                          the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+   |
+64 | fn to_ascii_lowercase(s: &str) -> Cow<'_, str> {
+   |                                       +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_style\selectors\parser.rs:621:17
+    |
+621 |     pub fn iter(&self) -> SelectorIter<Impl> {
+    |                 ^^^^^     ^^^^^^^^^^^^^^^^^^ the same 
+lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+621 |     pub fn iter(&self) -> SelectorIter<'_, Impl> {
+    |                                        +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_style\selectors\parser.rs:651:22
+    |
+651 |     pub fn iter_from(&self, offset: usize) -> 
+SelectorIter<Impl> {
+    |                      ^^^^^                    
+^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                      |
+    |                      the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+651 |     pub fn iter_from(&self, offset: usize) -> 
+SelectorIter<'_, Impl> {
+    |                                                            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_style\selectors\parser.rs:669:33
+    |
+669 |     pub fn iter_raw_match_order(&self) -> 
+slice::Iter<Component<Impl>> {
+    |                                 ^^^^^     
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                                 |
+    |                                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+669 |     pub fn iter_raw_match_order(&self) -> slice::Iter<'_, 
+Component<Impl>> {
+    |                                                       +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_style\selectors\parser.rs:687:38
+    |
+687 |     pub fn iter_raw_parse_order_from(&self, offset: usize) -> 
+Rev<slice::Iter<Component<Impl>>> {
+    |                                      ^^^^^                    
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ the same lifetime is hidden here
+    |                                      |
+    |                                      the lifetime is elided 
+here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+687 |     pub fn iter_raw_parse_order_from(&self, offset: usize) -> 
+Rev<slice::Iter<'_, Component<Impl>>> {
+    |                                                               
+                +++
+
+warning: `selectors` (lib) generated 5 warnings (run `cargo fix 
+--lib -p selectors` to apply 5 suggestions)
+warning: unexpected `cfg` condition value: `serde`
+  --> 
+vizia-patched\crates\vizia_style\src\values\basic\ident.rs:33:12
+   |
+33 | #[cfg_attr(feature = "serde", derive(serde::Serialize, 
+serde::Deserialize))]
+   |            ^^^^^^^^^^^^^^^^^ help: remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `serde` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/ca
+rgo-specifics.html> for more information about checking conditional 
+configuration
+   = note: `#[warn(unexpected_cfgs)]` on by default
+
+warning: unexpected `cfg` condition value: `serde`
+   --> vizia-patched\crates\vizia_style\src\values\custom.rs:217:12
+    |
+217 | #[cfg_attr(feature = "serde", derive(serde::Serialize, 
+serde::Deserialize))]
+    |            ^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `serde` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/c
+argo-specifics.html> for more information about checking 
+conditional configuration
+
+warning: unexpected `cfg` condition value: `serde`
+  --> vizia-patched\crates\vizia_style\src\values\custom.rs:44:37
+   |
+44 | pub struct TokenList<'i>(#[cfg_attr(feature = "serde", 
+serde(borrow))] pub Vec<TokenOrValue<'i>>);
+   |                                     ^^^^^^^^^^^^^^^^^ help: 
+remove the condition
+   |
+   = note: no expected values for `feature`
+   = help: consider adding `serde` as a feature in `Cargo.toml`
+   = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/ca
+rgo-specifics.html> for more information about checking conditional 
+configuration
+
+warning: unexpected `cfg` condition value: `serde`
+   --> vizia-patched\crates\vizia_style\src\values\custom.rs:220:16
+    |
+220 |     #[cfg_attr(feature = "serde", serde(borrow))]
+    |                ^^^^^^^^^^^^^^^^^ help: remove the condition
+    |
+    = note: no expected values for `feature`
+    = help: consider adding `serde` as a feature in `Cargo.toml`
+    = note: see <https://doc.rust-lang.org/nightly/rustc/check-cfg/c
+argo-specifics.html> for more information about checking 
+conditional configuration
+
+warning: unused import: `boolean::*`
+ --> vizia-patched\crates\vizia_style\src\values\basic\mod.rs:7:9
+  |
+7 | pub use boolean::*;
+  |         ^^^^^^^^^^
+  |
+  = note: `#[warn(unused_imports)]` (part of `#[warn(unused)]`) on 
+by default
+
+warning: unused import: `number::*`
+ --> vizia-patched\crates\vizia_style\src\values\basic\mod.rs:9:9
+  |
+9 | pub use number::*;
+  |         ^^^^^^^^^
+
+warning: unused import: `string::*`
+  --> vizia-patched\crates\vizia_style\src\values\basic\mod.rs:11:9
+   |
+11 | pub use string::*;
+   |         ^^^^^^^^^
+
+warning: eliding a lifetime that's named elsewhere is confusing
+  --> vizia-patched\crates\vizia_style\src\parser\rule.rs:30:57
+   |
+30 |     fn nested<'x: 'b>(&'x mut self) -> NestedRuleParser<'_, 
+'o, 'i> {
+   |                        -- the lifetime is named here    ^^ the 
+same lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+   = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: consistently use `'x`
+   |
+30 -     fn nested<'x: 'b>(&'x mut self) -> NestedRuleParser<'_, 
+'o, 'i> {
+30 +     fn nested<'x: 'b>(&'x mut self) -> NestedRuleParser<'x, 
+'o, 'i> {
+   |
+
+warning: `vizia_style` (lib) generated 8 warnings (run `cargo fix 
+--lib -p vizia_style` to apply 4 suggestions)
+warning: field `max_rating` is never read
+ --> vizia-patched\crates\vizia_core\src\views\rating.rs:6:5
+  |
+4 | pub struct Rating {
+  |            ------ field in this struct
+5 |     rating: u32,
+6 |     max_rating: u32,
+  |     ^^^^^^^^^^
+  |
+  = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by 
+default
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\localization\mod.rs:174:17
+    |
+174 |     fn get_args(&self, cx: &EventContext) -> FluentArgs {
+    |                 ^^^^^                        ^^^^^^^^^^ the 
+same lifetime is hidden here
+    |                 |
+    |                 the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+    = note: `#[warn(mismatched_lifetime_syntaxes)]` on by default
+help: use `'_` for type paths
+    |
+174 |     fn get_args(&self, cx: &EventContext) -> FluentArgs<'_> {
+    |                                                        ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\localization\mod.rs:182:18
+    |
+182 |     fn get_args2(&self, cx: &Context) -> FluentArgs {
+    |                  ^^^^^                   ^^^^^^^^^^ the same 
+lifetime is hidden here
+    |                  |
+    |                  the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+182 |     fn get_args2(&self, cx: &Context) -> FluentArgs<'_> {
+    |                                                    ++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\view.rs:118:27
+    |
+118 |     fn build<F>(self, cx: &mut Context, content: F) -> 
+Handle<Self>
+    |                           ^^^^^^^^^^^^                 
+^^^^^^^^^^^^ the same lifetime is hidden here
+    |                           |
+    |                           the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+118 |     fn build<F>(self, cx: &mut Context, content: F) -> 
+Handle<'_, Self>
+    |                                                               
++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\button.rs:75:29
+   |
+75 |     pub fn new<A, C, V>(cx: &mut Context, action: A, content: 
+C) -> Handle<Self>
+   |                             ^^^^^^^^^^^^                       
+     ^^^^^^^^^^^^ the same lifetime is hidden here
+   |                             |
+   |                             the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+75 |     pub fn new<A, C, V>(cx: &mut Context, action: A, content: 
+C) -> Handle<'_, Self>
+   |                                                                
+            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\checkbox.rs:138:20
+    |
+138 |     pub fn new(cx: &mut Context, checked: impl Lens<Target = 
+bool>) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^ the lifetime is elided here   
+         ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+138 |     pub fn new(cx: &mut Context, checked: impl Lens<Target = 
+bool>) -> Handle<'_, Self> {
+    |                                                               
+                +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\checkbox.rs:150:13
+    |
+150 |         cx: &mut Context,
+    |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+153 |     ) -> Handle<Self> {
+    |          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+153 |     ) -> Handle<'_, Self> {
+    |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\chip.rs:11:23
+   |
+11 |     pub fn new<T>(cx: &mut Context, text: impl Res<T> + Clone) 
+-> Handle<Self>
+   |                       ^^^^^^^^^^^^ the lifetime is elided here 
+   ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+11 |     pub fn new<T>(cx: &mut Context, text: impl Res<T> + Clone) 
+-> Handle<'_, Self>
+   |                                                                
+          +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\combobox.rs:43:20
+   |
+43 |     pub fn new(cx: &mut Context, list_lens: L1, selected: L2) 
+-> Handle<Self> {
+   |                    ^^^^^^^^^^^^ the lifetime is elided here    
+  ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+43 |     pub fn new(cx: &mut Context, list_lens: L1, selected: L2) 
+-> Handle<'_, Self> {
+   |                                                                
+         +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\combobox.rs:350:13
+    |
+350 |         cx: &mut Context,
+    |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+354 |     ) -> Handle<Self>
+    |          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+354 |     ) -> Handle<'_, Self>
+    |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\views\datepicker.rs:113:26
+    |
+113 |     pub fn new<L, D>(cx: &mut Context, lens: L) -> 
+Handle<Self>
+    |                          ^^^^^^^^^^^^              
+^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+113 |     pub fn new<L, D>(cx: &mut Context, lens: L) -> Handle<'_, 
+Self>
+    |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\dropdown.rs:141:29
+    |
+141 |     pub fn new<F, L, V>(cx: &mut Context, label: L, content: 
+F) -> Handle<Self>
+    |                             ^^^^^^^^^^^^                      
+     ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                             |
+    |                             the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+141 |     pub fn new<F, L, V>(cx: &mut Context, label: L, content: 
+F) -> Handle<'_, Self>
+    |                                                               
+            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\element.rs:111:20
+    |
+111 |     pub fn new(cx: &mut Context) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^     ^^^^^^^^^^^^ the same 
+lifetime is hidden here
+    |                    |
+    |                    the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+111 |     pub fn new(cx: &mut Context) -> Handle<'_, Self> {
+    |                                            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\knob.rs:34:13
+   |
+34 |         cx: &mut Context,
+   |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+38 |     ) -> Handle<Self> {
+   |          ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+38 |     ) -> Handle<'_, Self> {
+   |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\knob.rs:219:13
+    |
+219 |         cx: &mut Context,
+    |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+226 |     ) -> Handle<Self> {
+    |          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+226 |     ) -> Handle<'_, Self> {
+    |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\knob.rs:359:13
+    |
+359 |         cx: &mut Context,
+    |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+365 |     ) -> Handle<Self> {
+    |          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+365 |     ) -> Handle<'_, Self> {
+    |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\knob.rs:444:13
+    |
+444 |         cx: &mut Context,
+    |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+451 |     ) -> Handle<Self> {
+    |          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+451 |     ) -> Handle<'_, Self> {
+    |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\label.rs:102:23
+    |
+102 |     pub fn new<T>(cx: &mut Context, text: impl Res<T> + 
+Clone) -> Handle<Self>
+    |                       ^^^^^^^^^^^^ the lifetime is elided 
+here    ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+102 |     pub fn new<T>(cx: &mut Context, text: impl Res<T> + 
+Clone) -> Handle<'_, Self>
+    |                                                               
+           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\label.rs:195:23
+    |
+195 |     pub fn new<T>(cx: &mut Context, icon_code: impl Res<T> + 
+Clone) -> Handle<Self>
+    |                       ^^^^^^^^^^^^ the lifetime is elided 
+here         ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+195 |     pub fn new<T>(cx: &mut Context, icon_code: impl Res<T> + 
+Clone) -> Handle<'_, Self>
+    |                                                               
+                +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\list.rs:23:23
+   |
+23 |     pub fn new<F>(cx: &mut Context, lens: L, item: F) -> 
+Handle<Self>
+   |                       ^^^^^^^^^^^^                       
+^^^^^^^^^^^^ the same lifetime is hidden here
+   |                       |
+   |                       the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+23 |     pub fn new<F>(cx: &mut Context, lens: L, item: F) -> 
+Handle<'_, Self>
+   |                                                                
+ +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+ --> vizia-patched\crates\vizia_core\src\views\menu.rs:9:20
+  |
+9 |     pub fn new(cx: &mut Context, content: impl Fn(&mut 
+Context)) -> Handle<Self> {
+  |                    ^^^^^^^^^^^^ the lifetime is elided here     
+    ^^^^^^^^^^^^ the same lifetime is hidden here
+  |
+  = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+  |
+9 |     pub fn new(cx: &mut Context, content: impl Fn(&mut 
+Context)) -> Handle<'_, Self> {
+  |                                                                 
+           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\menu.rs:79:13
+   |
+79 |         cx: &mut Context,
+   |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+82 |     ) -> Handle<Self> {
+   |          ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+82 |     ) -> Handle<'_, Self> {
+   |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\menu.rs:206:13
+    |
+206 |         cx: &mut Context,
+    |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+209 |     ) -> Handle<Self> {
+    |          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+209 |     ) -> Handle<'_, Self> {
+    |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\menu.rs:251:23
+    |
+251 |     pub fn new<F>(cx: &mut Context, lens: L, _capture_focus: 
+bool, content: F) -> Handle<Self>
+    |                       ^^^^^^^^^^^^ the lifetime is elided 
+here                    ^^^^^^^^^^^^ the same lifetime is hidden 
+here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+251 |     pub fn new<F>(cx: &mut Context, lens: L, _capture_focus: 
+bool, content: F) -> Handle<'_, Self>
+    |                                                               
+                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\menu.rs:328:20
+    |
+328 |     pub fn new(cx: &mut Context) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^     ^^^^^^^^^^^^ the same 
+lifetime is hidden here
+    |                    |
+    |                    the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+328 |     pub fn new(cx: &mut Context) -> Handle<'_, Self> {
+    |                                            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> 
+vizia-patched\crates\vizia_core\src\views\notification.rs:17:20
+   |
+17 |     pub fn new(cx: &mut Context, header: String, content: 
+Option<String>) -> Handle<Self> {
+   |                    ^^^^^^^^^^^^ the lifetime is elided here    
+              ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+17 |     pub fn new(cx: &mut Context, header: String, content: 
+Option<String>) -> Handle<'_, Self> {
+   |                                                                
+                     +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\picklist.rs:14:13
+   |
+14 |         cx: &mut Context,
+   |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+18 |     ) -> Handle<Self>
+   |          ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+18 |     ) -> Handle<'_, Self>
+   |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\popup.rs:46:23
+   |
+46 |     pub fn new<F>(cx: &mut Context, lens: L, capture_focus: 
+bool, content: F) -> Handle<Self>
+   |                       ^^^^^^^^^^^^ the lifetime is elided here 
+                  ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+46 |     pub fn new<F>(cx: &mut Context, lens: L, capture_focus: 
+bool, content: F) -> Handle<'_, Self>
+   |                                                                
+                         +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\progressbar.rs:94:23
+   |
+94 |     pub fn new<L>(cx: &mut Context, lens: L, orientation: 
+Orientation) -> Handle<Self>
+   |                       ^^^^^^^^^^^^ the lifetime is elided here 
+           ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+94 |     pub fn new<L>(cx: &mut Context, lens: L, orientation: 
+Orientation) -> Handle<'_, Self>
+   |                                                                
+                  +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\views\progressbar.rs:105:30
+    |
+105 |     pub fn horizontal<L>(cx: &mut Context, lens: L) -> 
+Handle<Self>
+    |                              ^^^^^^^^^^^^              
+^^^^^^^^^^^^ the same lifetime is hidden here
+    |                              |
+    |                              the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+105 |     pub fn horizontal<L>(cx: &mut Context, lens: L) -> 
+Handle<'_, Self>
+    |                                                               
++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\views\progressbar.rs:116:28
+    |
+116 |     pub fn vertical<L>(cx: &mut Context, lens: L) -> 
+Handle<Self>
+    |                            ^^^^^^^^^^^^              
+^^^^^^^^^^^^ the same lifetime is hidden here
+    |                            |
+    |                            the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+116 |     pub fn vertical<L>(cx: &mut Context, lens: L) -> 
+Handle<'_, Self>
+    |                                                             
++++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\radio.rs:87:20
+   |
+87 |     pub fn new(cx: &mut Context, checked: impl Lens<Target = 
+bool>) -> Handle<Self> {
+   |                    ^^^^^^^^^^^^ the lifetime is elided here    
+        ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+87 |     pub fn new(cx: &mut Context, checked: impl Lens<Target = 
+bool>) -> Handle<'_, Self> {
+   |                                                                
+               +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\rating.rs:18:20
+   |
+18 |     pub fn new(cx: &mut Context, max_rating: u32, lens: impl 
+Lens<Target = u32>) -> Handle<Self> {
+   |                    ^^^^^^^^^^^^ the lifetime is elided here    
+                     ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+18 |     pub fn new(cx: &mut Context, max_rating: u32, lens: impl 
+Lens<Target = u32>) -> Handle<'_, Self> {
+   |                                                                
+                            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\scrollbar.rs:23:13
+   |
+23 |         cx: &mut Context,
+   |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+28 |     ) -> Handle<Self>
+   |          ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+28 |     ) -> Handle<'_, Self>
+   |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\views\scrollview.rs:140:13
+    |
+140 |         cx: &mut Context,
+    |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+146 |     ) -> Handle<Self>
+    |          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+146 |     ) -> Handle<'_, Self>
+    |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\views\scrollview.rs:174:13
+    |
+174 |         cx: &mut Context,
+    |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+179 |     ) -> Handle<Self>
+    |          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+179 |     ) -> Handle<'_, Self>
+    |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\views\scrollview.rs:298:20
+    |
+298 |     pub fn new(cx: &mut Context, content: impl FnOnce(&mut 
+Context)) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^ the lifetime is elided here   
+          ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+298 |     pub fn new(cx: &mut Context, content: impl FnOnce(&mut 
+Context)) -> Handle<'_, Self> {
+    |                                                               
+                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\slider.rs:104:20
+    |
+104 |     pub fn new(cx: &mut Context, lens: L) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^              ^^^^^^^^^^^^ the 
+same lifetime is hidden here
+    |                    |
+    |                    the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+104 |     pub fn new(cx: &mut Context, lens: L) -> Handle<'_, Self> 
+{
+    |                                                     +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\slider.rs:194:26
+    |
+194 |     pub fn custom<F>(cx: &mut Context, lens: L, content: F) 
+-> Handle<Self>
+    |                          ^^^^^^^^^^^^                         
+ ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                          |
+    |                          the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+194 |     pub fn custom<F>(cx: &mut Context, lens: L, content: F) 
+-> Handle<'_, Self>
+    |                                                               
+        +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\slider.rs:526:26
+    |
+526 |     pub fn new<L, T>(cx: &mut Context, lens: L, name: impl 
+Res<T>) -> Handle<Self>
+    |                          ^^^^^^^^^^^^ the lifetime is elided 
+here     ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+526 |     pub fn new<L, T>(cx: &mut Context, lens: L, name: impl 
+Res<T>) -> Handle<'_, Self>
+    |                                                               
+               +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\spinbox.rs:34:13
+   |
+34 |         cx: &mut Context,
+   |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+38 |     ) -> Handle<Spinbox>
+   |          ^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+38 |     ) -> Handle<'_, Spinbox>
+   |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\spinbox.rs:46:13
+   |
+46 |         cx: &mut Context,
+   |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+50 |     ) -> Handle<Spinbox>
+   |          ^^^^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+50 |     ) -> Handle<'_, Spinbox>
+   |                 +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\stack.rs:11:23
+   |
+11 |     pub fn new<F>(cx: &mut Context, content: F) -> Handle<Self>
+   |                       ^^^^^^^^^^^^                 
+^^^^^^^^^^^^ the same lifetime is hidden here
+   |                       |
+   |                       the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+11 |     pub fn new<F>(cx: &mut Context, content: F) -> Handle<'_, 
+Self>
+   |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\stack.rs:33:23
+   |
+33 |     pub fn new<F>(cx: &mut Context, content: F) -> Handle<Self>
+   |                       ^^^^^^^^^^^^                 
+^^^^^^^^^^^^ the same lifetime is hidden here
+   |                       |
+   |                       the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+33 |     pub fn new<F>(cx: &mut Context, content: F) -> Handle<'_, 
+Self>
+   |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\stack.rs:56:23
+   |
+56 |     pub fn new<F>(cx: &mut Context, content: F) -> Handle<Self>
+   |                       ^^^^^^^^^^^^                 
+^^^^^^^^^^^^ the same lifetime is hidden here
+   |                       |
+   |                       the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+56 |     pub fn new<F>(cx: &mut Context, content: F) -> Handle<'_, 
+Self>
+   |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\switch.rs:107:20
+    |
+107 |     pub fn new(cx: &mut Context, checked: impl Lens<Target = 
+bool>) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^ the lifetime is elided here   
+         ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+107 |     pub fn new(cx: &mut Context, checked: impl Lens<Target = 
+bool>) -> Handle<'_, Self> {
+    |                                                               
+                +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\tabview.rs:16:29
+   |
+16 |     pub fn new<L, T, F>(cx: &mut Context, lens: L, content: F) 
+-> Handle<Self>
+   |                             ^^^^^^^^^^^^                       
+   ^^^^^^^^^^^^ the same lifetime is hidden here
+   |                             |
+   |                             the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+16 |     pub fn new<L, T, F>(cx: &mut Context, lens: L, content: F) 
+-> Handle<'_, Self>
+   |                                                                
+          +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\tabview.rs:113:23
+    |
+113 |     pub fn new<F>(cx: &mut Context, index: usize, content: F) 
+-> Handle<Self>
+    |                       ^^^^^^^^^^^^ the lifetime is elided 
+here   ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+113 |     pub fn new<F>(cx: &mut Context, index: usize, content: F) 
+-> Handle<'_, Self>
+    |                                                               
+          +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\textbox.rs:111:20
+    |
+111 |     pub fn new(cx: &mut Context, lens: L) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^              ^^^^^^^^^^^^ the 
+same lifetime is hidden here
+    |                    |
+    |                    the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+111 |     pub fn new(cx: &mut Context, lens: L) -> Handle<'_, Self> 
+{
+    |                                                     +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\textbox.rs:138:30
+    |
+138 |     pub fn new_multiline(cx: &mut Context, lens: L, wrap: 
+bool) -> Handle<Self> {
+    |                              ^^^^^^^^^^^^                     
+     ^^^^^^^^^^^^ the same lifetime is hidden here
+    |                              |
+    |                              the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+138 |     pub fn new_multiline(cx: &mut Context, lens: L, wrap: 
+bool) -> Handle<'_, Self> {
+    |                                                               
+            +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> vizia-patched\crates\vizia_core\src\views\textbox.rs:146:21
+    |
+146 |     fn new_core(cx: &mut Context, lens: L, kind: TextboxKind) 
+-> Handle<Self> {
+    |                     ^^^^^^^^^^^^ the lifetime is elided here  
+   ^^^^^^^^^^^^ the same lifetime is hidden here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+146 |     fn new_core(cx: &mut Context, lens: L, kind: TextboxKind) 
+-> Handle<'_, Self> {
+    |                                                               
+          +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> vizia-patched\crates\vizia_core\src\views\timepicker.rs:32:26
+   |
+32 |     pub fn new<L, T>(cx: &mut Context, lens: L) -> Handle<Self>
+   |                          ^^^^^^^^^^^^              
+^^^^^^^^^^^^ the same lifetime is hidden here
+   |                          |
+   |                          the lifetime is elided here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+32 |     pub fn new<L, T>(cx: &mut Context, lens: L) -> Handle<'_, 
+Self>
+   |                                                           +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\views\timepicker.rs:105:20
+    |
+105 |     pub fn new(cx: &mut Context, lens: L) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^              ^^^^^^^^^^^^ the 
+same lifetime is hidden here
+    |                    |
+    |                    the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+105 |     pub fn new(cx: &mut Context, lens: L) -> Handle<'_, Self> 
+{
+    |                                                     +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+   --> 
+vizia-patched\crates\vizia_core\src\views\timepicker.rs:373:20
+    |
+373 |     pub fn new(cx: &mut Context, lens: L) -> Handle<Self> {
+    |                    ^^^^^^^^^^^^              ^^^^^^^^^^^^ the 
+same lifetime is hidden here
+    |                    |
+    |                    the lifetime is elided here
+    |
+    = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+    |
+373 |     pub fn new(cx: &mut Context, lens: L) -> Handle<'_, Self> 
+{
+    |                                                     +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+ --> vizia-patched\crates\vizia_core\src\views\tooltip.rs:6:20
+  |
+6 |     pub fn new(cx: &mut Context, content: impl FnOnce(&mut 
+Context)) -> Handle<Self> {
+  |                    ^^^^^^^^^^^^ the lifetime is elided here     
+        ^^^^^^^^^^^^ the same lifetime is hidden here
+  |
+  = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+  |
+6 |     pub fn new(cx: &mut Context, content: impl FnOnce(&mut 
+Context)) -> Handle<'_, Self> {
+  |                                                                 
+               +++
+
+warning: hiding a lifetime that's elided elsewhere is confusing
+  --> 
+vizia-patched\crates\vizia_core\src\views\virtual_list.rs:23:13
+   |
+23 |         cx: &mut Context,
+   |             ^^^^^^^^^^^^ the lifetime is elided here
+...
+27 |     ) -> Handle<Self>
+   |          ^^^^^^^^^^^^ the same lifetime is hidden here
+   |
+   = help: the same lifetime is referred to in inconsistent ways, 
+making the signature confusing
+help: use `'_` for type paths
+   |
+27 |     ) -> Handle<'_, Self>
+   |                 +++
+
+warning: `vizia_core` (lib) generated 56 warnings (run `cargo fix 
+--lib -p vizia_core` to apply 55 suggestions)
+    Checking kick_synth v0.1.11 
+(C:\Users\Marinus\Documents\BRGR.DEV\my_vst_kick_synth)
+error[E0425]: cannot find function `v2s_f32_hz` in module 
+`formatters`
+  --> src\lib.rs:81:47
+   |
+81 |             .with_value_to_string(formatters::v2s_f32_hz(1)),
+   |                                               ^^^^^^^^^^ not 
+found in `formatters`
+
+error[E0425]: cannot find function `v2s_f32_hz` in module 
+`formatters`
+  --> src\lib.rs:88:47
+   |
+88 |             .with_value_to_string(formatters::v2s_f32_hz(1)),
+   |                                               ^^^^^^^^^^ not 
+found in `formatters`
+
+error[E0277]: the trait bound `KickSynth: ClapPlugin` is not 
+satisfied
+   --> src\lib.rs:327:18
+    |
+327 | nih_export_clap!(KickSynth);
+    |                  ^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `ClapPlugin` is not implemented for `KickSynth`
+   --> src\lib.rs:13:1
+    |
+ 13 | pub struct KickSynth {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `PluginDescriptor::for_plugin`
+   --> C:\Users\Marinus\.cargo\git\checkouts\nih-plug-d4210f82e92029
+5f\28b149e\src\wrapper\clap\descriptor.rs:38:26
+    |
+ 38 |     pub fn for_plugin<P: ClapPlugin>() -> Self {
+    |                          ^^^^^^^^^^ required by this bound in 
+`PluginDescriptor::for_plugin`
+
+error[E0277]: the trait bound `KickSynth: ClapPlugin` is not 
+satisfied
+   --> src\lib.rs:327:1
+    |
+327 | nih_export_clap!(KickSynth);
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ unsatisfied trait bound
+    |
+help: the trait `ClapPlugin` is not implemented for `KickSynth`
+   --> src\lib.rs:13:1
+    |
+ 13 | pub struct KickSynth {
+    | ^^^^^^^^^^^^^^^^^^^^
+note: required by a bound in `nih_plug::wrapper::clap::Wrapper`
+   --> C:\Users\Marinus\.cargo\git\checkouts\nih-plug-d4210f82e92029
+5f\28b149e\src\wrapper\clap\wrapper.rs:103:23
+    |
+103 | pub struct Wrapper<P: ClapPlugin> {
+    |                       ^^^^^^^^^^ required by this bound in 
+`Wrapper`
+    = note: this error originates in the macro `nih_export_clap` 
+(in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: the function or associated item `new` exists for 
+struct `nih_plug::wrapper::clap::Wrapper<KickSynth>`, but its trait 
+bounds were not satisfied
+   --> src\lib.rs:327:1
+    |
+ 13 | pub struct KickSynth {
+    | -------------------- doesn't satisfy `KickSynth: ClapPlugin`
+...
+327 | nih_export_clap!(KickSynth);
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^ function or associated item 
+cannot be called on `nih_plug::wrapper::clap::Wrapper<KickSynth>` 
+due to unsatisfied trait bounds
+    |
+    = note: the following trait bounds were not satisfied:
+            `KickSynth: ClapPlugin`
+note: the trait `ClapPlugin` must be implemented
+   --> C:\Users\Marinus\.cargo\git\checkouts\nih-plug-d4210f82e92029
+5f\28b149e\src\plugin\clap.rs:6:1
+    |
+  6 | pub trait ClapPlugin: Plugin {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    = note: this error originates in the macro `nih_export_clap` 
+(in Nightly builds, run with -Z macro-backtrace for more info)
+
+Some errors have detailed explanations: E0277, E0425, E0599.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `kick_synth` (lib) due to 5 previous errors
