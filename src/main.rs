@@ -1,5 +1,6 @@
 use nih_plug::prelude::*;
 use kick_synth::KickSynth;
+
 fn main() {
     let mut args: Vec<String> = std::env::args().collect();
 
