@@ -27,6 +27,7 @@ pub struct KickSynth {
 
     // Trigger Logic
     was_trigger_on: bool,
+    midi_velocity: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -55,6 +56,13 @@ struct KickParams {
     #[id = "pitch_decay"]
     pub pitch_decay: FloatParam,
 
+    /// Drive / Distortion amount
+    #[id = "drive"]
+    pub drive: FloatParam,
+
+    #[id = "drive_model"]
+    pub drive_model: IntParam,
+
     /// Amplitude Attack time (ms)
     #[id = "attack"]
     pub attack: FloatParam,
@@ -70,13 +78,6 @@ struct KickParams {
     /// Amplitude Release time (ms)
     #[id = "release"]
     pub release: FloatParam,
-
-    /// Drive / Distortion amount
-    #[id = "drive"]
-    pub drive: FloatParam,
-
-    #[id = "drive_model"]
-    pub drive_model: IntParam,
 
     /// Manual Trigger Button
     #[id = "trigger"]
@@ -98,7 +99,7 @@ impl Default for KickParams {
 
             tune: FloatParam::new(
                 "Tune",
-                42.0,
+                44.0,
                 FloatRange::Linear {
                     min: 30.0,
                     max: 150.0,
@@ -108,26 +109,39 @@ impl Default for KickParams {
 
             sweep: FloatParam::new(
                 "Sweep",
-                275.0,
+                239.0,
                 FloatRange::Linear {
                     min: 0.0,
                     max: 1000.0,
                 },
             )
-            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+            .with_value_to_string(formatters::v2s_f32_rounded(0)),
 
             pitch_decay: FloatParam::new(
-                "Pitch Decay",
-                87.0,
+                "Decay",
+                100.0,
                 FloatRange::Linear {
                     min: 5.0,
                     max: 500.0,
                 },
             )
-            .with_value_to_string(Arc::new(move |value| format!("{:.1} ms", value))),
+            .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
+
+            drive: FloatParam::new("Gain", 0.33, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_unit("%")
+                .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            drive_model: IntParam::new(
+                "Mode",
+                1i32,
+                IntRange::Linear {
+                    min: 1i32,
+                    max: 5i32,
+                },
+            ),
 
             attack: FloatParam::new(
-                "Attack",
+                "A",
                 0.1,
                 FloatRange::Linear {
                     min: 0.1,
@@ -137,40 +151,27 @@ impl Default for KickParams {
             .with_value_to_string(Arc::new(move |value| format!("{:.1} ms", value))),
 
             decay: FloatParam::new(
-                "Decay",
-                133.0,
+                "D",
+                153.0,
                 FloatRange::Linear {
                     min: 10.0,
                     max: 1000.0,
                 },
             )
-            .with_value_to_string(Arc::new(move |value| format!("{:.1} ms", value))),
+            .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
 
-            sustain: FloatParam::new("Sustain", 0.25, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_value_to_string(formatters::v2s_f32_percentage(1)),
+            sustain: FloatParam::new("S", 0.44, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             release: FloatParam::new(
-                "Release",
-                170.0,
+                "R",
+                128.0,
                 FloatRange::Linear {
                     min: 10.0,
                     max: 1000.0,
                 },
             )
-            .with_value_to_string(Arc::new(move |value| format!("{:.1} ms", value))),
-
-            drive: FloatParam::new("Drive", 0.28, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_unit("%")
-                .with_value_to_string(formatters::v2s_f32_percentage(1)),
-
-            drive_model: IntParam::new(
-                "Drive Model",
-                1i32,
-                IntRange::Linear {
-                    min: 1i32,
-                    max: 5i32,
-                },
-            ),
+            .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
 
             trigger: BoolParam::new("Trigger", false),
         }
@@ -188,6 +189,7 @@ impl Default for KickSynth {
             phase_timer: 0.0,
             pitch_env_timer: 0.0,
             was_trigger_on: false,
+            midi_velocity: 1.0,
         }
     }
 }
@@ -250,7 +252,7 @@ impl Plugin for KickSynth {
 
             if gui_triggered || (trigger_param_val && !self.was_trigger_on) {
                 nih_log!("Trigger!");
-                self.trigger_note();
+                self.trigger_note(1.0);
             } else if gui_released && self.was_trigger_on {
                 nih_log!("Release!");
                 self.release_note();
@@ -259,16 +261,16 @@ impl Plugin for KickSynth {
 
             // 2. MIDI Handle
             while let Some(event) = next_event {
+
                 if event.timing() > sample_idx as u32 {
                     break;
                 }
                 match event {
                     NoteEvent::NoteOn { velocity, .. } => {
-                        nih_log!("Midi Event!");
 
                         // Accept any note on any channel
                         if velocity > 0.0 {
-                            self.trigger_note();
+                            self.trigger_note(velocity);
                         } else {
                             // Handle NoteOn with vel 0 as NoteOff
                             self.release_note();
@@ -364,7 +366,7 @@ impl Plugin for KickSynth {
                     5 => Self::drive_saturation_digital(drive, signal),
                     _ => Self::drive_tape_classic(drive, signal),
                 };
-                output = driven_signal;
+                output = driven_signal * self.midi_velocity * 0.9;
 
                 self.pitch_env_timer += 1.0;
                 self.phase_timer += 1.0;
@@ -384,7 +386,8 @@ impl Plugin for KickSynth {
 }
 
 impl KickSynth {
-    fn trigger_note(&mut self) {
+    fn trigger_note(&mut self, velocity: f32) {
+        self.midi_velocity = velocity;
         self.current_phase = EnvelopePhase::Attack;
         self.phase_timer = 0.0;
         self.pitch_env_timer = 0.0;
