@@ -198,7 +198,7 @@
 
 .broken-param-button.active:hover {
     background-color: rgba(210, 53, 25, 0.5);
-    color: #512540;
+    color: #fcfcfc;
 }
 
 /*---------------------------------------------------------------*/
@@ -255,5 +255,5 @@
 
 .distortion-param-button.active:hover {
     background-color: rgba(210, 53, 25, 0.5);
-    color: #512540;
+    color: #fcfcfc;
 }
