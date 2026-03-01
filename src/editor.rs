@@ -94,25 +94,21 @@ pub(crate) fn create(
             })
             .class("finetune-section-inner");
 
-            HStack::new(cx, |cx| {
-                // Trigger Button
-                create_text_button(
-                    cx,
-                    "TRIGGER",
-                    Data::params.map(|p| p.trigger.value()),
-                    &params,
-                    |p| &p.trigger,
-                    "distortion-param-button",
-                    "active",
-                )
-                .width(Stretch(0.45))
-                .height(Stretch(0.5))
-                .child_left(Stretch(1.0))
-                .child_right(Stretch(1.0))
-                .child_top(Stretch(0.08))
-                .child_bottom(Stretch(0.08));
-            })
-            .width(Pixels(250.0));
+            // Trigger Button
+            create_text_button(
+                cx,
+                "TRIGGER",
+                Data::params.map(|p| p.trigger.value()),
+                &params,
+                |p| &p.trigger,
+                "distortion-param-button",
+                "active",
+            )
+            .left(Stretch(1.0))
+            .right(Stretch(1.0))
+            .width(Pixels(250.0))
+            .height(Pixels(60.0))
+            .child_space(Stretch(1.0)); // Center text horizontally and vertically
         })
         .width(Stretch(1.0))
         .height(Stretch(1.0))
@@ -161,16 +157,12 @@ where
 
         // --- PHASE 2: START THE TIMER TO CLOSE THE GESTURE for the initial press ---
         let gesture_duration = std::time::Duration::from_millis(20);
-        cx.add_timer(
-            gesture_duration,
-            Some(gesture_duration),
-            move |cx, action| {
-                if let TimerAction::Stop = action {
-                    cx.emit(ParamEvent::EndSetParameter(param_static));
-                    cx.emit(RawParamEvent::EndSetParameter(ptr));
-                }
-            },
-        );
+        cx.add_timer(gesture_duration, Some(gesture_duration), move |cx, action| {
+            if let TimerAction::Stop = action {
+                cx.emit(ParamEvent::EndSetParameter(param_static));
+                cx.emit(RawParamEvent::EndSetParameter(ptr));
+            }
+        });
 
         // --- Reset param back to 0.0 after a delay ---
         let reset_delay = std::time::Duration::from_millis(50);
