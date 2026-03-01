@@ -75,12 +75,17 @@ struct KickParams {
     #[id = "drive"]
     pub drive: FloatParam,
 
+    #[id = "drive_model"]
+    pub drive_model: IntParam,
+
     /// Manual Trigger Button
     #[id = "trigger"]
     pub trigger: BoolParam,
 
     /// Trigger Logic for the UI (consumed by audio thread)
     pub gui_trigger: AtomicBool,
+    /// Release Logic for the UI (consumed by audio thread)
+    pub gui_release: AtomicBool,
 }
 
 impl Default for KickParams {
@@ -89,10 +94,11 @@ impl Default for KickParams {
             editor_state: editor::default_state(),
 
             gui_trigger: AtomicBool::new(false),
+            gui_release: AtomicBool::new(false),
 
             tune: FloatParam::new(
                 "Tune",
-                50.0,
+                42.0,
                 FloatRange::Linear {
                     min: 30.0,
                     max: 150.0,
@@ -102,7 +108,7 @@ impl Default for KickParams {
 
             sweep: FloatParam::new(
                 "Sweep",
-                200.0,
+                275.0,
                 FloatRange::Linear {
                     min: 0.0,
                     max: 1000.0,
@@ -112,7 +118,7 @@ impl Default for KickParams {
 
             pitch_decay: FloatParam::new(
                 "Pitch Decay",
-                50.0,
+                87.0,
                 FloatRange::Linear {
                     min: 5.0,
                     max: 500.0,
@@ -122,7 +128,7 @@ impl Default for KickParams {
 
             attack: FloatParam::new(
                 "Attack",
-                1.0,
+                0.1,
                 FloatRange::Linear {
                     min: 0.1,
                     max: 100.0,
@@ -132,7 +138,7 @@ impl Default for KickParams {
 
             decay: FloatParam::new(
                 "Decay",
-                200.0,
+                133.0,
                 FloatRange::Linear {
                     min: 10.0,
                     max: 1000.0,
@@ -140,12 +146,12 @@ impl Default for KickParams {
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.1} ms", value))),
 
-            sustain: FloatParam::new("Sustain", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+            sustain: FloatParam::new("Sustain", 0.25, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_value_to_string(formatters::v2s_f32_percentage(1)),
 
             release: FloatParam::new(
                 "Release",
-                100.0,
+                170.0,
                 FloatRange::Linear {
                     min: 10.0,
                     max: 1000.0,
@@ -153,9 +159,18 @@ impl Default for KickParams {
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.1} ms", value))),
 
-            drive: FloatParam::new("Drive", 0.1, FloatRange::Linear { min: 0.0, max: 1.0 })
+            drive: FloatParam::new("Drive", 0.28, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
                 .with_value_to_string(formatters::v2s_f32_percentage(1)),
+
+            drive_model: IntParam::new(
+                "Drive Model",
+                1i32,
+                IntRange::Linear {
+                    min: 1i32,
+                    max: 5i32,
+                },
+            ),
 
             trigger: BoolParam::new("Trigger", false),
         }
@@ -190,7 +205,7 @@ impl Plugin for KickSynth {
         ..AudioIOLayout::const_default()
     }];
 
-    const MIDI_INPUT: MidiConfig = MidiConfig::MidiCCs;
+    const MIDI_INPUT: MidiConfig = MidiConfig::Basic;
     const MIDI_OUTPUT: MidiConfig = MidiConfig::None;
     const SAMPLE_ACCURATE_AUTOMATION: bool = true;
 
@@ -230,10 +245,15 @@ impl Plugin for KickSynth {
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
             // 1. Trigger Check (UI Atomic OR Parameter Edge)
             let gui_triggered = self.params.gui_trigger.swap(false, Ordering::SeqCst);
+            let gui_released = self.params.gui_release.swap(false, Ordering::SeqCst);
             let trigger_param_val = self.params.trigger.value();
 
             if gui_triggered || (trigger_param_val && !self.was_trigger_on) {
+                nih_log!("Trigger!");
                 self.trigger_note();
+            } else if gui_released && self.was_trigger_on {
+                nih_log!("Release!");
+                self.release_note();
             }
             self.was_trigger_on = trigger_param_val;
 
@@ -244,9 +264,19 @@ impl Plugin for KickSynth {
                 }
                 match event {
                     NoteEvent::NoteOn { velocity, .. } => {
+                        nih_log!("Midi Event!");
+
+                        // Accept any note on any channel
                         if velocity > 0.0 {
                             self.trigger_note();
+                        } else {
+                            // Handle NoteOn with vel 0 as NoteOff
+                            self.release_note();
                         }
+                    }
+                    NoteEvent::NoteOff { .. } => {
+                        // Accept any note off on any channel
+                        self.release_note();
                     }
                     _ => (),
                 }
@@ -266,6 +296,7 @@ impl Plugin for KickSynth {
                 let sustain_lvl = self.params.sustain.smoothed.next();
                 let release_ms = self.params.release.smoothed.next();
                 let drive = self.params.drive.smoothed.next();
+                let drive_model = self.params.drive_model.value();
 
                 // ADSR Logic
                 match self.current_phase {
@@ -298,7 +329,10 @@ impl Plugin for KickSynth {
                     }
                     EnvelopePhase::Release => {
                         let release_samples = (sample_rate * (release_ms / 1000.0)).max(1.0);
-                        self.envelope_value -= sustain_lvl / release_samples;
+                        // We decay from the current envelope value down to 0
+                        let release_step = 1.0 / release_samples;
+                        self.envelope_value -= release_step;
+
                         if self.envelope_value <= 0.0 {
                             self.envelope_value = 0.0;
                             self.current_phase = EnvelopePhase::Idle;
@@ -322,7 +356,14 @@ impl Plugin for KickSynth {
                 let sine_wave = (self.phase * 2.0 * std::f32::consts::PI).sin();
                 let signal = sine_wave * self.envelope_value;
 
-                let driven_signal = (signal * (1.0 + drive * 8.0)).tanh();
+                let driven_signal = match drive_model {
+                    1 => Self::drive_tape_classic(drive, signal),
+                    2 => Self::drive_tape_modern(drive, signal),
+                    3 => Self::drive_tube_triode(drive, signal),
+                    4 => Self::drive_tube_pentode(drive, signal),
+                    5 => Self::drive_saturation_digital(drive, signal),
+                    _ => Self::drive_tape_classic(drive, signal),
+                };
                 output = driven_signal;
 
                 self.pitch_env_timer += 1.0;
@@ -349,6 +390,118 @@ impl KickSynth {
         self.pitch_env_timer = 0.0;
         self.phase = 0.0; // Start at 0-crossing
         self.envelope_value = 0.0;
+    }
+
+    fn release_note(&mut self) {
+        // Only transition to release if we are currently playing a note
+        if self.current_phase != EnvelopePhase::Idle && self.current_phase != EnvelopePhase::Release {
+             self.current_phase = EnvelopePhase::Release;
+             self.phase_timer = 0.0;
+        }
+    }
+
+    // Tape Saturation Type 1: Classic Analog Tape (Soft Knee)
+    // Models vintage tape machines with smooth, musical saturation and hysteresis-like behavior
+    fn drive_tape_classic(drive: f32, signal: f32) -> f32 {
+        let gain = 1.0 + drive * 12.0;
+        let x = signal * gain;
+
+        // Soft saturation curve with tape-like compression
+        let saturated = if x.abs() < 0.5 {
+            x * (1.0 - 0.15 * x.abs())
+        } else {
+            let sign = x.signum();
+            sign * (0.425 + 0.575 * (1.0 - (-(x.abs() - 0.5) * 3.0).exp()))
+        };
+
+        // Apply gentle high-frequency rolloff simulation
+        saturated * 0.85
+    }
+
+    // Tape Saturation Type 2: Modern High-Bias Tape (Asymmetric)
+    // Models modern tape with asymmetric clipping and warmth
+    fn drive_tape_modern(drive: f32, signal: f32) -> f32 {
+        let gain = 1.0 + drive * 10.0;
+        let x = signal * gain;
+
+        // Asymmetric tape saturation (positive/negative behave differently)
+        let saturated = if x >= 0.0 {
+            // Positive: harder saturation
+            x / (1.0 + x.abs().powf(1.4))
+        } else {
+            // Negative: softer saturation
+            x / (1.0 + (x.abs() * 0.85).powf(1.2))
+        };
+
+        saturated * 0.9
+    }
+
+    // Tube Saturation Type 1: Triode Tube (Warm, Musical)
+    // Models classic triode tube stages with even/odd harmonics
+    fn drive_tube_triode(drive: f32, signal: f32) -> f32 {
+        let gain = 1.0 + drive * 15.0;
+        let x = signal * gain;
+
+        // Triode-style transfer curve with crossover distortion
+        let saturated = if x.abs() < 0.1 {
+            x * 0.95 // Slight deadzone for tube character
+        } else {
+            // Soft tube saturation with cubic nonlinearity
+            let sign = x.signum();
+            let abs_x = x.abs();
+            sign * (abs_x - 0.33 * abs_x.powf(3.0)) / (1.0 + 0.1 * abs_x.powf(2.0))
+        };
+
+        // Output scaling with tube warmth
+        saturated * 0.75
+    }
+
+    // Tube Saturation Type 2: Pentode/Power Tube (Aggressive)
+    // Models power tube stages with harder clipping and compression
+    fn drive_tube_pentode(drive: f32, signal: f32) -> f32 {
+        let gain = 1.0 + drive * 18.0;
+        let x = signal * gain;
+
+        // Power tube saturation with grid clipping simulation
+        let saturated = if x.abs() < 0.3 {
+            x
+        } else if x.abs() < 1.0 {
+            let sign = x.signum();
+            let abs_x = x.abs();
+            // Transition region with square law
+            sign * (0.3 + 0.7 * (abs_x - 0.3).powf(0.6))
+        } else {
+            // Hard limiting
+            x.signum() * (0.3 + 0.7 * 0.7_f32.powf(0.6))
+        };
+
+        saturated * 0.7
+    }
+
+    // Digital Saturation: Modern Clipper with Oversampling Simulation
+    // Clean, transparent saturation with minimal aliasing artifacts
+    fn drive_saturation_digital(drive: f32, signal: f32) -> f32 {
+        let gain = 1.0 + drive * 20.0;
+        let x = signal * gain;
+
+        // Quintic polynomial approximation (C2 continuous)
+        let saturated = if x.abs() <= 1.0 {
+            x * (1.5 - 0.5 * x.abs().powf(2.0))
+        } else {
+            x.signum()
+        };
+
+        // Apply soft knee at threshold
+        let threshold = 0.8;
+        let final_signal = if saturated.abs() > threshold {
+            let sign = saturated.signum();
+            let over = saturated.abs() - threshold;
+            sign * (threshold + over / (1.0 + over * 3.0))
+        } else {
+            saturated
+        };
+
+        final_signal * 0.8
     }
 }
 

@@ -29,7 +29,7 @@ struct Data {
 impl Model for Data {}
 
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1000, 500))
+    ViziaState::new(|| (1100, 600))
 }
 
 pub(crate) fn create(
@@ -75,6 +75,9 @@ pub(crate) fn create(
                     .width(Stretch(1.0));
 
                 SingleKnob::new(cx, Data::params, |params| &params.drive, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.drive_model, false)
                     .width(Stretch(1.0));
             })
             .class("finetune-section-inner");
@@ -133,6 +136,9 @@ where
     let params_arc = params.clone();
     let selector = selector.clone();
 
+    let params_arc_down = params_arc.clone();
+    let selector_down = selector.clone();
+
     DebugWrapper::new(cx, label_text, move |cx| {
         Label::new(cx, label_text).hoverable(false);
     })
@@ -143,7 +149,47 @@ where
         cx.focus();
         cx.set_active(true);
 
-        params_arc.gui_trigger.store(true, Ordering::SeqCst);
+        params_arc_down.gui_trigger.store(true, Ordering::SeqCst);
+
+        let param = selector_down(&params_arc_down);
+        let ptr = param.as_ptr();
+        let param_static: &'static BoolParam = unsafe { std::mem::transmute(param) };
+
+        // --- PHASE 1: OPEN THE GESTURE & PERFORM (set to 1.0) ---
+        cx.emit(ParamEvent::BeginSetParameter(param_static));
+        cx.emit(RawParamEvent::BeginSetParameter(ptr));
+        cx.emit(ParamEvent::SetParameterNormalized(param_static, 1.0));
+        cx.emit(RawParamEvent::SetParameterNormalized(ptr, 1.0));
+
+        // --- PHASE 2: START THE TIMER TO CLOSE THE GESTURE for the initial press ---
+        let gesture_duration = std::time::Duration::from_millis(20);
+        cx.add_timer(
+            gesture_duration,
+            Some(gesture_duration),
+            move |cx, action| {
+                if let TimerAction::Stop = action {
+                    cx.emit(ParamEvent::EndSetParameter(param_static));
+                    cx.emit(RawParamEvent::EndSetParameter(ptr));
+                }
+            },
+        );
+
+        // --- Reset param back to 0.0 after a delay ---
+        let reset_delay = std::time::Duration::from_millis(50);
+        cx.add_timer(reset_delay, None, move |cx, _| {
+            cx.emit(ParamEvent::BeginSetParameter(param_static));
+            cx.emit(RawParamEvent::BeginSetParameter(ptr));
+            cx.emit(ParamEvent::SetParameterNormalized(param_static, 0.0));
+            cx.emit(RawParamEvent::SetParameterNormalized(ptr, 0.0));
+            cx.emit(ParamEvent::EndSetParameter(param_static));
+            cx.emit(RawParamEvent::EndSetParameter(ptr));
+        });
+    })
+    .on_mouse_up(move |cx, _btn| {
+        cx.focus();
+        cx.set_active(true);
+
+        params_arc.gui_release.store(true, Ordering::SeqCst);
 
         let param = selector(&params_arc);
         let ptr = param.as_ptr();
@@ -157,12 +203,16 @@ where
 
         // --- PHASE 2: START THE TIMER TO CLOSE THE GESTURE for the initial press ---
         let gesture_duration = std::time::Duration::from_millis(20);
-        cx.add_timer(gesture_duration, Some(gesture_duration), move |cx, action| {
-            if let TimerAction::Stop = action {
-                cx.emit(ParamEvent::EndSetParameter(param_static));
-                cx.emit(RawParamEvent::EndSetParameter(ptr));
-            }
-        });
+        cx.add_timer(
+            gesture_duration,
+            Some(gesture_duration),
+            move |cx, action| {
+                if let TimerAction::Stop = action {
+                    cx.emit(ParamEvent::EndSetParameter(param_static));
+                    cx.emit(RawParamEvent::EndSetParameter(ptr));
+                }
+            },
+        );
 
         // --- Reset param back to 0.0 after a delay ---
         let reset_delay = std::time::Duration::from_millis(50);
