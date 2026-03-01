@@ -25,6 +25,15 @@ pub struct KickSynth {
     // Pitch Envelope State
     pitch_env_timer: f32,
 
+    // Texture State
+    tex_env_value: f32,
+    tex_env_phase: EnvelopePhase,
+    wt_phase: f32,
+    tex_filter_state: f32,
+    wavetable: Vec<f32>,
+    static_rng_state: u32,
+    free_rng_state: u32,
+
     // Trigger Logic
     was_trigger_on: bool,
     midi_velocity: f32,
@@ -62,6 +71,26 @@ struct KickParams {
 
     #[id = "drive_model"]
     pub drive_model: IntParam,
+
+    /// Texture Amount
+    #[id = "tex_amt"]
+    pub tex_amt: FloatParam,
+
+    /// Texture Decay time (ms)
+    #[id = "tex_decay"]
+    pub tex_decay: FloatParam,
+
+    /// Texture Randomness (0.0 = static, 1.0 = completely random)
+    #[id = "randomness"]
+    pub randomness: FloatParam,
+
+    /// Texture Type (1: Dust, 2: Crackle, 3: Organic WT)
+    #[id = "tex_type"]
+    pub tex_type: IntParam,
+
+    /// Texture Tone / Frequency / Density
+    #[id = "tex_tone"]
+    pub tex_tone: FloatParam,
 
     /// Amplitude Attack time (ms)
     #[id = "attack"]
@@ -140,6 +169,36 @@ impl Default for KickParams {
                 },
             ),
 
+            tex_amt: FloatParam::new("Tex Amount", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_unit("%")
+                .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            tex_decay: FloatParam::new(
+                "Tex Decay",
+                150.0,
+                FloatRange::Linear {
+                    min: 10.0,
+                    max: 1000.0,
+                },
+            )
+                .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
+
+            randomness: FloatParam::new("Randomness", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_unit("%")
+                .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            tex_type: IntParam::new(
+                "Tex Type",
+                1i32,
+                IntRange::Linear {
+                    min: 1i32,
+                    max: 3i32,
+                },
+            ),
+
+            tex_tone: FloatParam::new("Tex Tone", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
+                .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
             attack: FloatParam::new(
                 "A",
                 0.1,
@@ -180,6 +239,28 @@ impl Default for KickParams {
 
 impl Default for KickSynth {
     fn default() -> Self {
+        let mut wavetable = vec![0.0; 2048];
+        let mut seed = 42u32;
+        let mut next_rd = || {
+            seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+            (seed as f32) / (u32::MAX as f32)
+        };
+        for i in 1..=32 {
+            let harmonic = i as f32;
+            let phase_offset = next_rd() * std::f32::consts::PI * 2.0;
+            let amp = 1.0 / (harmonic.powf(1.5));
+            for j in 0..2048 {
+                let phase = (j as f32 / 2048.0) * harmonic * std::f32::consts::PI * 2.0 + phase_offset;
+                wavetable[j] += phase.sin() * amp;
+            }
+        }
+        let max_val = wavetable.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        if max_val > 0.0 {
+            for sample in wavetable.iter_mut() {
+                *sample /= max_val;
+            }
+        }
+
         Self {
             params: Arc::new(KickParams::default()),
             sample_rate: 44100.0,
@@ -188,6 +269,15 @@ impl Default for KickSynth {
             current_phase: EnvelopePhase::Idle,
             phase_timer: 0.0,
             pitch_env_timer: 0.0,
+
+            tex_env_value: 0.0,
+            tex_env_phase: EnvelopePhase::Idle,
+            wt_phase: 0.0,
+            tex_filter_state: 0.0,
+            wavetable,
+            static_rng_state: 1337,
+            free_rng_state: 80085,
+
             was_trigger_on: false,
             midi_velocity: 1.0,
         }
@@ -232,6 +322,8 @@ impl Plugin for KickSynth {
         self.phase = 0.0;
         self.envelope_value = 0.0;
         self.current_phase = EnvelopePhase::Idle;
+        self.tex_env_value = 0.0;
+        self.tex_env_phase = EnvelopePhase::Idle;
         self.was_trigger_on = false;
     }
 
@@ -288,17 +380,23 @@ impl Plugin for KickSynth {
             // 3. DSP
             let mut output = 0.0;
 
-            if self.current_phase != EnvelopePhase::Idle {
+            if self.current_phase != EnvelopePhase::Idle || self.tex_env_phase != EnvelopePhase::Idle {
                 let base_freq = self.params.tune.smoothed.next();
                 let sweep_amt = self.params.sweep.smoothed.next();
                 let pitch_decay_ms = self.params.pitch_decay.smoothed.next();
+                let drive = self.params.drive.smoothed.next();
+                let drive_model = self.params.drive_model.value();
+
+                let tex_amt = self.params.tex_amt.smoothed.next();
+                let tex_decay_ms = self.params.tex_decay.smoothed.next();
+                let rand_param = self.params.randomness.smoothed.next();
+                let tex_type = self.params.tex_type.value();
+                let tex_tone = self.params.tex_tone.smoothed.next();
 
                 let attack_ms = self.params.attack.smoothed.next();
                 let decay_ms = self.params.decay.smoothed.next();
                 let sustain_lvl = self.params.sustain.smoothed.next();
                 let release_ms = self.params.release.smoothed.next();
-                let drive = self.params.drive.smoothed.next();
-                let drive_model = self.params.drive_model.value();
 
                 // ADSR Logic
                 match self.current_phase {
@@ -358,18 +456,100 @@ impl Plugin for KickSynth {
                 let sine_wave = (self.phase * 2.0 * std::f32::consts::PI).sin();
                 let signal = sine_wave * self.envelope_value;
 
+                // Texture Logic
+                let mut tex_signal = 0.0;
+                match self.tex_env_phase {
+                    EnvelopePhase::Decay => {
+                        let decay_samples = (sample_rate * (tex_decay_ms / 1000.0)).max(1.0);
+                        self.tex_env_value -= 1.0 / decay_samples;
+                        if self.tex_env_value <= 0.0 {
+                            self.tex_env_value = 0.0;
+                            self.tex_env_phase = EnvelopePhase::Idle;
+                        }
+                    }
+                    EnvelopePhase::Release => {
+                        let release_samples = (sample_rate * (10.0 / 1000.0)).max(1.0); // 10ms release
+                        self.tex_env_value -= 1.0 / release_samples;
+                        if self.tex_env_value <= 0.0 {
+                            self.tex_env_value = 0.0;
+                            self.tex_env_phase = EnvelopePhase::Idle;
+                        }
+                    }
+                    _ => {}
+                }
+
+                if self.tex_env_phase != EnvelopePhase::Idle && tex_amt > 0.0 {
+                    self.static_rng_state = self.static_rng_state.wrapping_mul(1664525).wrapping_add(1013904223);
+                    self.free_rng_state = self.free_rng_state.wrapping_mul(1664525).wrapping_add(1013904223);
+
+                    let static_val = (self.static_rng_state as f32) / (u32::MAX as f32);
+                    let free_val = (self.free_rng_state as f32) / (u32::MAX as f32);
+                    
+                    let static_sym = static_val * 2.0 - 1.0;
+                    let free_sym = free_val * 2.0 - 1.0;
+
+                    let noise_val = match tex_type {
+                        1 => {
+                            let threshold = 0.999 - (tex_tone * 0.049);
+                            let static_dust = if static_val > threshold { static_sym } else { 0.0 };
+                            let free_dust = if free_val > threshold { free_sym } else { 0.0 };
+                            static_dust * (1.0 - rand_param) + free_dust * rand_param
+                        },
+                        2 => {
+                            let cutoff = 200.0 * (50.0_f32).powf(tex_tone);
+                            let dt = 1.0 / sample_rate;
+                            let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+                            let alpha = dt / (rc + dt);
+                            
+                            let eq_pwr_static = (1.0 - rand_param).sqrt();
+                            let eq_pwr_free = rand_param.sqrt();
+                            let combined_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+                            
+                            self.tex_filter_state += alpha * (combined_noise - self.tex_filter_state);
+                            let shaped = self.tex_filter_state * self.tex_filter_state * self.tex_filter_state * 10.0;
+                            shaped.clamp(-1.0, 1.0)
+                        },
+                        3 => {
+                            let base_freq = 20.0 * (50.0_f32).powf(tex_tone);
+                            let eq_pwr_static = (1.0 - rand_param).sqrt();
+                            let eq_pwr_free = rand_param.sqrt();
+                            let combined_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+                            
+                            let freq = base_freq * (1.0 + 0.05 * combined_noise);
+                            let phase_inc = freq / sample_rate;
+                            self.wt_phase = (self.wt_phase + phase_inc).fract();
+                            
+                            let wt_len = self.wavetable.len() as f32;
+                            let idx = self.wt_phase * wt_len;
+                            let idx_i = idx as usize;
+                            let idx_next = (idx_i + 1) % self.wavetable.len();
+                            let frac = idx.fract();
+                            
+                            let s1 = self.wavetable[idx_i];
+                            let s2 = self.wavetable[idx_next];
+                            s1 + frac * (s2 - s1)
+                        },
+                        _ => 0.0,
+                    };
+                    tex_signal = noise_val * self.tex_env_value * tex_amt * 0.4;
+                }
+
+                let pre_drive = signal + tex_signal;
+
                 let driven_signal = match drive_model {
-                    1 => Self::drive_tape_classic(drive, signal),
-                    2 => Self::drive_tape_modern(drive, signal),
-                    3 => Self::drive_tube_triode(drive, signal),
-                    4 => Self::drive_tube_pentode(drive, signal),
-                    5 => Self::drive_saturation_digital(drive, signal),
-                    _ => Self::drive_tape_classic(drive, signal),
+                    1 => Self::drive_tape_classic(drive, pre_drive),
+                    2 => Self::drive_tape_modern(drive, pre_drive),
+                    3 => Self::drive_tube_triode(drive, pre_drive),
+                    4 => Self::drive_tube_pentode(drive, pre_drive),
+                    5 => Self::drive_saturation_digital(drive, pre_drive),
+                    _ => Self::drive_tape_classic(drive, pre_drive),
                 };
                 output = driven_signal * self.midi_velocity * 0.9;
 
-                self.pitch_env_timer += 1.0;
-                self.phase_timer += 1.0;
+                if self.current_phase != EnvelopePhase::Idle {
+                    self.pitch_env_timer += 1.0;
+                    self.phase_timer += 1.0;
+                }
             }
 
             for sample in channel_samples {
@@ -393,6 +573,11 @@ impl KickSynth {
         self.pitch_env_timer = 0.0;
         self.phase = 0.0; // Start at 0-crossing
         self.envelope_value = 0.0;
+
+        self.tex_env_phase = EnvelopePhase::Decay;
+        self.tex_env_value = 1.0;
+        self.wt_phase = 0.0;
+        self.static_rng_state = 1337;
     }
 
     fn release_note(&mut self) {
@@ -400,6 +585,9 @@ impl KickSynth {
         if self.current_phase != EnvelopePhase::Idle && self.current_phase != EnvelopePhase::Release {
              self.current_phase = EnvelopePhase::Release;
              self.phase_timer = 0.0;
+        }
+        if self.tex_env_phase != EnvelopePhase::Idle && self.tex_env_phase != EnvelopePhase::Release {
+             self.tex_env_phase = EnvelopePhase::Release;
         }
     }
 

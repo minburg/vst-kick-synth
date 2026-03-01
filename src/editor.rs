@@ -29,7 +29,7 @@ struct Data {
 impl Model for Data {}
 
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1100, 600))
+    ViziaState::new(|| (1300, 750))
 }
 
 pub(crate) fn create(
@@ -66,7 +66,8 @@ pub(crate) fn create(
             .class("title-section");
 
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |params| &params.tune, false).width(Stretch(1.0));
+                SingleKnob::new(cx, Data::params, |params| &params.tune, false)
+                    .width(Stretch(1.0));
 
                 SingleKnob::new(cx, Data::params, |params| &params.sweep, false)
                     .width(Stretch(1.0));
@@ -81,6 +82,24 @@ pub(crate) fn create(
                     .width(Stretch(1.0));
             })
             .class("finetune-section-inner");
+
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |params| &params.tex_amt, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.tex_decay, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.randomness, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.tex_type, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.tex_tone, false)
+                    .width(Stretch(1.0));
+            })
+                .class("finetune-section-inner");
 
             HStack::new(cx, |cx| {
                 SingleKnob::new(cx, Data::params, |params| &params.attack, false)
