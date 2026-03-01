@@ -6,6 +6,7 @@ use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::num::NonZeroU32;
 
 mod editor;
 

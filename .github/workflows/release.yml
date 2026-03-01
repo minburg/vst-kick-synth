@@ -20,10 +20,10 @@ jobs:
         include:
           - os: windows-latest
             target: x86_64-pc-windows-msvc
-            artifact_name: tape_delay-win-x64
+            artifact_name: kick_synth-win-x64
           - os: macos-latest
             target: aarch64-apple-darwin
-            artifact_name: tape_delay-macos-universal
+            artifact_name: kick_synth-macos-universal
 
     name: Package ${{ matrix.artifact_name }}
     runs-on: ${{ matrix.os }}
@@ -49,16 +49,16 @@ jobs:
             cargo build --release --target aarch64-apple-darwin --lib
           
             # Generate bundle structure
-            cargo xtask bundle tape_delay --profile release
+            cargo xtask bundle kick_synth --profile release
           
             # Stitch binaries with lipo
             lipo -create \
-              -output target/bundled/tape_delay.vst3/Contents/MacOS/tape_delay \
-              target/x86_64-apple-darwin/release/libtape_delay.dylib \
-              target/aarch64-apple-darwin/release/libtape_delay.dylib
+              -output target/bundled/kick_synth.vst3/Contents/MacOS/kick_synth \
+              target/x86_64-apple-darwin/release/libkick_synth.dylib \
+              target/aarch64-apple-darwin/release/libkick_synth.dylib
           else
             # Windows build
-            cargo xtask bundle tape_delay --profile release
+            cargo xtask bundle kick_synth --profile release
           fi
 
       - name: Upload Artifact
@@ -87,9 +87,9 @@ jobs:
         run: |
           cd artifacts
           # Zip Windows bundle
-          zip -r ../tape_delay-v${{ steps.get_version.outputs.VERSION }}-win64.zip tape_delay-win-x64/*
+          zip -r ../kick_synth-v${{ steps.get_version.outputs.VERSION }}-win64.zip kick_synth-win-x64/*
           # Zip macOS bundle (preserving symlinks and permissions)
-          zip -ry ../tape_delay-v${{ steps.get_version.outputs.VERSION }}-macos.zip tape_delay-macos-universal/*
+          zip -ry ../kick_synth-v${{ steps.get_version.outputs.VERSION }}-macos.zip kick_synth-macos-universal/*
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1

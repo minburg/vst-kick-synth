@@ -27,8 +27,8 @@ The workflow includes a `get_version` step that handles the naming conventions a
 - Stripping the Prefix: The script strips the `v` from the tag name (e.g., `v1.2.3` becomes `1.2.3`).
 - Release Naming: The GitHub Release will be titled "**Release v1.2.3**".
 - Filename Generation: Artifacts are renamed for clarity, resulting in filenames like:
-  - `tape_delay-v1.2.3-win64.zip` 
-  - `tape_delay-v1.2.3-macos.zip`
+  - `kick_synth-v1.2.3-win64.zip` 
+  - `kick_synth-v1.2.3-macos.zip`
 
 ---
 ## 3. Bundle & Zip Handling
@@ -51,5 +51,5 @@ The workflow uses `zip -ry` for macOS:
 ## 4. Post-Release: Gatekeeper Bypass (macOS)
 Since these builds are not code-signed or notarized, macOS users must clear the "quarantine" flag after moving the plugin to their `/Library/Audio/Plug-Ins/VST3/` folder:
 ```bash
-sudo xattr -rd com.apple.quarantine /Library/Audio/Plug-Ins/VST3/tape_delay.vst3
+sudo xattr -rd com.apple.quarantine /Library/Audio/Plug-Ins/VST3/kick_synth.vst3
 ```
