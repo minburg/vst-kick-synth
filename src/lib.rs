@@ -196,7 +196,7 @@ impl Default for KickSynth {
 
 impl Plugin for KickSynth {
     const NAME: &'static str = "Kick Synth";
-    const VENDOR: &'static str = "BRGR.DEV";
+    const VENDOR: &'static str = "Convolution DEV";
     const URL: &'static str = "https://github.com/minburg/vst-kick-synth";
     const EMAIL: &'static str = "email@example.com";
     const VERSION: &'static str = "0.1.0";
