@@ -16,11 +16,16 @@ pub struct KickSynth {
 
     // DSP State
     phase: f32,
+    #[cfg(debug_assertions)]
+    debug_phase: f32,
+    #[cfg(debug_assertions)]
+    debug_release_timer: f32,
 
     // ADSR State
     envelope_value: f32,
     current_phase: EnvelopePhase,
     phase_timer: f32,
+    release_early: bool,
 
     // Pitch Envelope State
     pitch_env_timer: f32,
@@ -28,15 +33,20 @@ pub struct KickSynth {
     // Texture State
     tex_env_value: f32,
     tex_env_phase: EnvelopePhase,
+    tex_release_early: bool,
     wt_phase: f32,
     tex_filter_state: f32,
+    tex_filter_state_2: f32,
     wavetable: Vec<f32>,
+    sampled_noise: Vec<f32>,
     static_rng_state: u32,
     free_rng_state: u32,
 
     // Trigger Logic
     was_trigger_on: bool,
     midi_velocity: f32,
+    active_midi_note: Option<u8>,
+    analog_drift: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -84,7 +94,7 @@ struct KickParams {
     #[id = "randomness"]
     pub randomness: FloatParam,
 
-    /// Texture Type (1: Dust, 2: Crackle, 3: Organic WT)
+    /// Texture Type (1: Dust, 2: Crackle, 3: Sampled Noise, 4: Organic WT, 5: Vinyl Hiss/Pop, 6: Electrical Zap)
     #[id = "tex_type"]
     pub tex_type: IntParam,
 
@@ -192,7 +202,7 @@ impl Default for KickParams {
                 1i32,
                 IntRange::Linear {
                     min: 1i32,
-                    max: 3i32,
+                    max: 6i32,
                 },
             ),
 
@@ -240,6 +250,7 @@ impl Default for KickParams {
 impl Default for KickSynth {
     fn default() -> Self {
         let mut wavetable = vec![0.0; 2048];
+        let mut sampled_noise = vec![0.0; (44100.0 * 0.5) as usize]; // 500ms
         let mut seed = 42u32;
         let mut next_rd = || {
             seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
@@ -261,25 +272,49 @@ impl Default for KickSynth {
             }
         }
 
+        // Generate fractional brownian motion sampled noise
+        let mut value = 0.0f32;
+        for i in 0..sampled_noise.len() {
+            let white = next_rd() * 2.0 - 1.0;
+            value += (white - value) * 0.1; // Pink-ish noise filter
+            sampled_noise[i] = value;
+        }
+        let max_noise = sampled_noise.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        if max_noise > 0.0 {
+            for sample in sampled_noise.iter_mut() {
+                *sample /= max_noise;
+            }
+        }
+
         Self {
             params: Arc::new(KickParams::default()),
             sample_rate: 44100.0,
             phase: 0.0,
+            #[cfg(debug_assertions)]
+            debug_phase: 0.0,
+            #[cfg(debug_assertions)]
+            debug_release_timer: -1.0,
             envelope_value: 0.0,
             current_phase: EnvelopePhase::Idle,
             phase_timer: 0.0,
+            release_early: false,
             pitch_env_timer: 0.0,
 
             tex_env_value: 0.0,
             tex_env_phase: EnvelopePhase::Idle,
+            tex_release_early: false,
             wt_phase: 0.0,
             tex_filter_state: 0.0,
+            tex_filter_state_2: 0.0,
             wavetable,
+            sampled_noise,
             static_rng_state: 1337,
             free_rng_state: 80085,
 
             was_trigger_on: false,
             midi_velocity: 1.0,
+            active_midi_note: None,
+            analog_drift: 0.0,
         }
     }
 }
@@ -320,11 +355,19 @@ impl Plugin for KickSynth {
 
     fn reset(&mut self) {
         self.phase = 0.0;
+        #[cfg(debug_assertions)]
+        {
+            self.debug_phase = 0.0;
+            self.debug_release_timer = -1.0;
+        }
         self.envelope_value = 0.0;
         self.current_phase = EnvelopePhase::Idle;
         self.tex_env_value = 0.0;
         self.tex_env_phase = EnvelopePhase::Idle;
         self.was_trigger_on = false;
+        self.release_early = false;
+        self.tex_release_early = false;
+        self.active_midi_note = None;
     }
 
     fn process(
@@ -337,6 +380,23 @@ impl Plugin for KickSynth {
         let mut next_event = _ctx.next_event();
 
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
+            #[cfg(debug_assertions)]
+            {
+                self.debug_phase += 1.0 / sample_rate;
+                if self.debug_phase >= 0.5 {
+                    self.debug_phase -= 0.5;
+                    self.trigger_note(0.8);
+                    self.debug_release_timer = 0.2 * sample_rate;
+                }
+
+                if self.debug_release_timer > 0.0 {
+                    self.debug_release_timer -= 1.0;
+                    if self.debug_release_timer <= 0.0 {
+                        self.release_note();
+                    }
+                }
+            }
+
             // 1. Trigger Check (UI Atomic OR Parameter Edge)
             let gui_triggered = self.params.gui_trigger.swap(false, Ordering::SeqCst);
             let gui_released = self.params.gui_release.swap(false, Ordering::SeqCst);
@@ -358,19 +418,24 @@ impl Plugin for KickSynth {
                     break;
                 }
                 match event {
-                    NoteEvent::NoteOn { velocity, .. } => {
-
+                    NoteEvent::NoteOn { velocity, note, .. } => {
                         // Accept any note on any channel
                         if velocity > 0.0 {
+                            self.active_midi_note = Some(note);
                             self.trigger_note(velocity);
                         } else {
-                            // Handle NoteOn with vel 0 as NoteOff
-                            self.release_note();
+                            if self.active_midi_note == Some(note) {
+                                self.release_note();
+                                self.active_midi_note = None;
+                            }
                         }
                     }
-                    NoteEvent::NoteOff { .. } => {
+                    NoteEvent::NoteOff { note, .. } => {
                         // Accept any note off on any channel
-                        self.release_note();
+                        if self.active_midi_note == Some(note) {
+                            self.release_note();
+                            self.active_midi_note = None;
+                        }
                     }
                     _ => (),
                 }
@@ -410,20 +475,36 @@ impl Plugin for KickSynth {
                         }
                     }
                     EnvelopePhase::Decay => {
-                        let decay_samples = (sample_rate * (decay_ms / 1000.0)).max(1.0);
-                        self.envelope_value -= (1.0 - sustain_lvl) / decay_samples;
-                        if self.envelope_value <= sustain_lvl {
-                            self.envelope_value = sustain_lvl;
-                            self.current_phase = EnvelopePhase::Sustain;
-                            self.phase_timer = 0.0;
-                            if sustain_lvl <= 0.0 {
+                        if self.release_early && sustain_lvl > 0.0 {
+                            // Note was released during Attack/Decay, and sustain is active.
+                            // Behave like a release phase now.
+                            let release_samples = (sample_rate * (release_ms / 1000.0)).max(1.0);
+                            let release_step = 1.0 / release_samples;
+                            self.envelope_value -= release_step;
+
+                            if self.envelope_value <= 0.0 {
+                                self.envelope_value = 0.0;
                                 self.current_phase = EnvelopePhase::Idle;
+                            }
+                        } else {
+                            // Normal decay phase (note is held, or sustain is 0).
+                            let decay_samples = (sample_rate * (decay_ms / 1000.0)).max(1.0);
+                            let target = sustain_lvl;
+                            self.envelope_value -= (1.0 - target) / decay_samples;
+
+                            if self.envelope_value <= target {
+                                self.envelope_value = target;
+                                if target <= 0.0 {
+                                    self.current_phase = EnvelopePhase::Idle;
+                                } else {
+                                    self.current_phase = EnvelopePhase::Sustain;
+                                    self.phase_timer = 0.0;
+                                }
                             }
                         }
                     }
                     EnvelopePhase::Sustain => {
                         self.envelope_value = sustain_lvl;
-                        // Manual Release timer or MIDI NoteOff would go here.
                         // For a trigger kick, we just decay to 0 if sustain is 0.
                         // If sustain is > 0, it stays until external release.
                     }
@@ -449,7 +530,7 @@ impl Plugin for KickSynth {
                     0.0
                 };
 
-                let current_freq = base_freq + (sweep_amt * pitch_env_val);
+                let current_freq = base_freq + self.analog_drift + (sweep_amt * pitch_env_val);
                 let phase_inc = current_freq / sample_rate;
                 self.phase = (self.phase + phase_inc).fract();
 
@@ -490,10 +571,19 @@ impl Plugin for KickSynth {
 
                     let noise_val = match tex_type {
                         1 => {
-                            let threshold = 0.999 - (tex_tone * 0.049);
+                            let threshold = 0.999 - (tex_tone * 0.1);
                             let static_dust = if static_val > threshold { static_sym } else { 0.0 };
                             let free_dust = if free_val > threshold { free_sym } else { 0.0 };
-                            static_dust * (1.0 - rand_param) + free_dust * rand_param
+                            let raw_dust = static_dust * (1.0 - rand_param) + free_dust * rand_param;
+                            
+                            // Lowpass filter explicitly mapped by tex_tone
+                            let cutoff = 8000.0 * (1.0 - tex_tone * 0.9);
+                            let dt = 1.0 / sample_rate;
+                            let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+                            let alpha = dt / (rc + dt);
+                            
+                            self.tex_filter_state += alpha * (raw_dust - self.tex_filter_state);
+                            self.tex_filter_state * 3.0
                         },
                         2 => {
                             let cutoff = 200.0 * (50.0_f32).powf(tex_tone);
@@ -510,6 +600,28 @@ impl Plugin for KickSynth {
                             shaped.clamp(-1.0, 1.0)
                         },
                         3 => {
+                            // Sampled Noise playback
+                            let mut t = self.wt_phase * (self.sampled_noise.len() as f32);
+                            let playback_speed = 0.5 + tex_tone;
+                            
+                            self.wt_phase += playback_speed / sample_rate;
+                            if self.wt_phase >= 1.0 {
+                                self.wt_phase -= 1.0;
+                            }
+                            if self.wt_phase < 0.0 {
+                                self.wt_phase += 1.0;
+                            }
+                            
+                            t = t.clamp(0.0, (self.sampled_noise.len() - 2) as f32);
+                            let idx1 = t as usize;
+                            let idx2 = idx1 + 1;
+                            let frac = t.fract();
+                            
+                            let s1 = self.sampled_noise[idx1];
+                            let s2 = self.sampled_noise[idx2];
+                            s1 + frac * (s2 - s1)
+                        },
+                        4 => {
                             let base_freq = 20.0 * (50.0_f32).powf(tex_tone);
                             let eq_pwr_static = (1.0 - rand_param).sqrt();
                             let eq_pwr_free = rand_param.sqrt();
@@ -528,6 +640,43 @@ impl Plugin for KickSynth {
                             let s1 = self.wavetable[idx_i];
                             let s2 = self.wavetable[idx_next];
                             s1 + frac * (s2 - s1)
+                        },
+                        5 => {
+                            // Vinyl Hiss & Pop
+                            let eq_pwr_static = (1.0 - rand_param).sqrt();
+                            let eq_pwr_free = rand_param.sqrt();
+                            let hiss_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+                            
+                            // Pop generator
+                            let mix_val = static_val * (1.0 - rand_param) + free_val * rand_param;
+                            let pop_threshold = 0.9995 - (tex_tone * 0.005);
+                            let pop = if mix_val > pop_threshold { 1.5 * hiss_noise.signum() } else { 0.0 };
+                            
+                            // Soft filter on hiss
+                            let cutoff = 4000.0;
+                            let dt = 1.0 / sample_rate;
+                            let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+                            let alpha = dt / (rc + dt);
+                            self.tex_filter_state += alpha * (hiss_noise - self.tex_filter_state);
+                            
+                            let noise = self.tex_filter_state * 0.3 + pop;
+                            noise.clamp(-1.0, 1.0)
+                        },
+                        6 => {
+                            // Electrical Zap/FM style burst
+                            let freq = 1000.0 * (4.0_f32).powf(tex_tone);
+                            let mut mod_freq = freq * 0.5 * rand_param;
+                            if rand_param <= 0.0 {
+                                mod_freq = freq * 0.5; // Ensure mode is interesting at 0.0 randomness
+                            }
+                            
+                            // Free-running modulator
+                            let drift = (free_val - 0.5) * 200.0 * rand_param;
+                            self.tex_filter_state_2 = (self.tex_filter_state_2 + (mod_freq + drift) / sample_rate).fract();
+                            let mo = (self.tex_filter_state_2 * 2.0 * std::f32::consts::PI).sin();
+                            
+                            self.wt_phase = (self.wt_phase + (freq + mo * 1000.0) / sample_rate).fract();
+                            (self.wt_phase * 2.0 * std::f32::consts::PI).sin() * 0.6
                         },
                         _ => 0.0,
                     };
@@ -573,22 +722,29 @@ impl KickSynth {
         self.pitch_env_timer = 0.0;
         self.phase = 0.0; // Start at 0-crossing
         self.envelope_value = 0.0;
+        self.release_early = false;
+        
+        // Calculate analog drift for this hit
+        self.analog_drift = ((self.free_rng_state as f32 / u32::MAX as f32) * 2.0 - 1.0) * 1.5; // +/- 1.5 Hz 
 
         self.tex_env_phase = EnvelopePhase::Decay;
         self.tex_env_value = 1.0;
         self.wt_phase = 0.0;
         self.static_rng_state = 1337;
+        self.tex_release_early = false;
     }
 
     fn release_note(&mut self) {
-        // Only transition to release if we are currently playing a note
-        if self.current_phase != EnvelopePhase::Idle && self.current_phase != EnvelopePhase::Release {
+        // If attack or decay, we set `release_early` to skip sustain and decay smoothly to 0.
+        // If sustain, we just go to release.
+        if self.current_phase == EnvelopePhase::Attack || self.current_phase == EnvelopePhase::Decay {
+            self.release_early = true;
+        } else if self.current_phase == EnvelopePhase::Sustain {
              self.current_phase = EnvelopePhase::Release;
              self.phase_timer = 0.0;
         }
-        if self.tex_env_phase != EnvelopePhase::Idle && self.tex_env_phase != EnvelopePhase::Release {
-             self.tex_env_phase = EnvelopePhase::Release;
-        }
+
+        // The texture envelope is a one-shot and should not be affected by note release.
     }
 
     // Tape Saturation Type 1: Classic Analog Tape (Soft Knee)
@@ -637,10 +793,11 @@ impl KickSynth {
         let saturated = if x.abs() < 0.1 {
             x * 0.95 // Slight deadzone for tube character
         } else {
-            // Soft tube saturation with cubic nonlinearity
+            // Soft tube saturation using tanh for guaranteed bounding
             let sign = x.signum();
             let abs_x = x.abs();
-            sign * (abs_x - 0.33 * abs_x.powf(3.0)) / (1.0 + 0.1 * abs_x.powf(2.0))
+            let mapped = (abs_x - 0.1) * 1.5;
+            sign * (0.095 + mapped.tanh() * 0.905)
         };
 
         // Output scaling with tube warmth
@@ -656,14 +813,12 @@ impl KickSynth {
         // Power tube saturation with grid clipping simulation
         let saturated = if x.abs() < 0.3 {
             x
-        } else if x.abs() < 1.0 {
+        } else {
+            // Bounded hard limit transition using atan for stability
             let sign = x.signum();
             let abs_x = x.abs();
-            // Transition region with square law
-            sign * (0.3 + 0.7 * (abs_x - 0.3).powf(0.6))
-        } else {
-            // Hard limiting
-            x.signum() * (0.3 + 0.7 * 0.7_f32.powf(0.6))
+            let mapped = (abs_x - 0.3) * 2.0;
+            sign * (0.3 + mapped.atan() * (0.7 / std::f32::consts::FRAC_PI_2))
         };
 
         saturated * 0.7
