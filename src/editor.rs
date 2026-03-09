@@ -11,9 +11,9 @@ use std::sync::Arc;
 use crate::editor::my_peak_meter::MyPeakMeter;
 use crate::KickParams;
 
+mod my_peak_meter;
 mod param_knob;
 mod single_knob;
-mod my_peak_meter;
 
 pub const ORBITRON_TTF: &[u8] = include_bytes!("resource/fonts/Orbitron-Regular.ttf");
 pub const COMFORTAA_LIGHT_TTF: &[u8] = include_bytes!("resource/fonts/Comfortaa-Light.ttf");
@@ -161,24 +161,6 @@ pub(crate) fn create(
             .class("finetune-section-inner");
 
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |params| &params.attack, false)
-                    .width(Stretch(1.0));
-
-                SingleKnob::new(cx, Data::params, |params| &params.decay, false)
-                    .width(Stretch(1.0));
-
-                SingleKnob::new(cx, Data::params, |params| &params.sustain, false)
-                    .width(Stretch(1.0));
-
-                SingleKnob::new(cx, Data::params, |params| &params.release, false)
-                    .width(Stretch(1.0));
-            })
-            .width(Stretch(1.0))
-            .left(Stretch(0.05))
-            .right(Stretch(0.05))
-            .class("finetune-section-inner");
-
-            HStack::new(cx, |cx| {
                 SingleKnob::new(cx, Data::params, |params| &params.corrosion_frequency, false)
                     .width(Stretch(1.0));
 
@@ -198,6 +180,24 @@ pub(crate) fn create(
                 .left(Stretch(0.05))
                 .right(Stretch(0.05))
                 .class("finetune-section-inner");
+
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |params| &params.attack, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.decay, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.sustain, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.release, false)
+                    .width(Stretch(1.0));
+            })
+            .width(Stretch(1.0))
+            .left(Stretch(0.05))
+            .right(Stretch(0.05))
+            .class("finetune-section-inner");
 
             HStack::new(cx, |cx| {
                 MyPeakMeter::new(
