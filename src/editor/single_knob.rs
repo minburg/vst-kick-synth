@@ -33,30 +33,13 @@ impl SingleKnob {
         .build(
             cx,
             ParamWidgetBase::build_view(params, params_to_param, move |cx, param_data| {
-                ZStack::new(cx, |cx| {
-                    VStack::new(cx, |cx| {
-                        Label::new(
-                            cx,
-                            params.map(move |params| params_to_param(params).name().to_owned()),
-                        )
-                        .class("single-knob-label");
-                        Label::new(
-                            cx,
-                            params.map(move |params| {
-                                params_to_param(params)
-                                    .normalized_value_to_string(
-                                        params_to_param(params)
-                                            .modulated_normalized_value()
-                                            .to_owned(),
-                                        true,
-                                    )
-                                    .to_owned()
-                            }),
-                        )
-                        .class("single-knob-label");
-                    })
-                    .row_between(Pixels(6.0))
-                    .child_space(Stretch(1.0));
+                VStack::new(cx, |cx| {
+                    Label::new(
+                        cx,
+                        params.map(move |params| params_to_param(params).name().to_owned()),
+                    )
+                    .space(Stretch(1.0))
+                    .class("single-knob-label");
 
                     Knob::custom(
                         cx,
@@ -69,29 +52,23 @@ impl SingleKnob {
                             ZStack::new(cx, |cx| {
                                 // Transparent "Hit Surface" to capture mouse everywhere
                                 Element::new(cx)
-                                    .width(Pixels(80.0))
-                                    .height(Pixels(80.0))
+                                    .width(Pixels(100.0))
+                                    .height(Pixels(100.0))
                                     .class("single-knob-hitbox");
 
-                                // Visual Arc
-                                ArcTrack::new(
-                                    cx,
-                                    centered,
-                                    Percentage(330.0),
-                                    Percentage(13.2),
-                                    -150.,
-                                    150.,
-                                    KnobMode::Continuous,
-                                )
-                                .value(lens)
-                                .class("single-knob-arc");
+                                // Vintage Knob Image
+                                // This element replaces the arc. Define the image in CSS using the .vintage-knob class.
+                                Element::new(cx)
+                                    .class("vintage-knob")
+                                    .width(Pixels(100.0))
+                                    .height(Pixels(100.0))
+                                    // Rotate from -150 deg (at 0.0) to 150 deg (at 1.0)
+                                    .rotate(lens.map(|val| Angle::Deg(val * 300.0 - 18.0)));
                             })
                             .child_space(Stretch(1.0))
-                            .width(Pixels(99.0))
-                            .height(Pixels(99.0))
                         },
                     )
-                    .space(Stretch(1.0))
+                    .space(Stretch(5.0))
                     .on_mouse_down(move |cx, _button| {
                         cx.emit(SingleKnobEvent::BeginSetParam);
                     })
@@ -101,6 +78,22 @@ impl SingleKnob {
                     .on_mouse_up(move |cx, _button| {
                         cx.emit(SingleKnobEvent::EndSetParam);
                     });
+
+                    Label::new(
+                        cx,
+                        params.map(move |params| {
+                            params_to_param(params)
+                                .normalized_value_to_string(
+                                    params_to_param(params)
+                                        .modulated_normalized_value()
+                                        .to_owned(),
+                                    true,
+                                )
+                                .to_owned()
+                        }),
+                    )
+                    .space(Stretch(1.0))
+                    .class("single-knob-label");
                 })
                 .child_space(Stretch(1.0));
             }),

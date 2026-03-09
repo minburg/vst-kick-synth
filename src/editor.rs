@@ -17,7 +17,10 @@ pub const ORBITRON_TTF: &[u8] = include_bytes!("resource/fonts/Orbitron-Regular.
 pub const COMFORTAA_LIGHT_TTF: &[u8] = include_bytes!("resource/fonts/Comfortaa-Light.ttf");
 pub const COMFORTAA: &str = "Comfortaa";
 
-const BG_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/background_image.png");
+const BG_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/kick_background_2.png");
+const POTI_3_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/poti_3_fixed_small.png");
+const INSTA_ICON_BYTES: &[u8] = include_bytes!("resource/images/instagram_icon.png");
+const SPOTIFY_ICON_BYTES: &[u8] = include_bytes!("resource/images/spotify_icon.png");
 
 use self::param_knob::ParamKnob;
 
@@ -48,6 +51,21 @@ pub(crate) fn create(
             Err(e) => nih_error!("Failed to load image: {}", e),
         }
 
+        match load_from_memory(POTI_3_IMAGE_BYTES) {
+            Ok(img) => cx.load_image("poti_3_fixed_small.png", img, ImageRetentionPolicy::Forever),
+            Err(e) => nih_error!("Failed to load image: {}", e),
+        }
+
+        match load_from_memory(INSTA_ICON_BYTES) {
+            Ok(img) => cx.load_image("insta.png", img, ImageRetentionPolicy::Forever),
+            Err(e) => nih_error!("Failed to load image: {}", e),
+        }
+
+        match load_from_memory(SPOTIFY_ICON_BYTES) {
+            Ok(img) => cx.load_image("spotify.png", img, ImageRetentionPolicy::Forever),
+            Err(e) => nih_error!("Failed to load image: {}", e),
+        }
+
         if let Err(e) = cx.add_stylesheet(include_style!("/src/resource/style.css")) {
             nih_log!("CSS Error: {:?}", e);
         }
@@ -59,20 +77,47 @@ pub(crate) fn create(
 
         VStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
-                Label::new(cx, "CONVOLUTION'S KICK SYNTH").class("header-title");
+                Label::new(cx, "CONVOLUTION'S Kick Synth").class("header-title");
+                HStack::new(cx, |cx| {
+                    Label::new(cx, "Check for Updates")
+                        .class("update-link")
+                        .on_press(|_| {
+                            if let Err(e) = webbrowser::open("https://github.com/minburg/vst-kick-synth/releases") {
+                                nih_log!("Failed to open browser: {}", e);
+                            }
+                        });
+                    Label::new(cx, "v0.1.0").class("header-version-title");
+                    Element::new(cx)
+                        .class("insta-button")
+                        .on_press(|_| {
+                            let _ = webbrowser::open("https://www.instagram.com/convolution.official/");
+                        });
+                    Element::new(cx)
+                        .class("spotify-button").opacity(0.5)
+                        .on_press(|_| {
+                            let _ = webbrowser::open("https://open.spotify.com/artist/7k0eMwQbplT3Zyyy0DalRL?si=aalp-7GQQ2O_cZRodAlsNg");
+                        });
+                })
+                    .width(Stretch(1.0))
+                    .child_space(Stretch(1.0))
+                    .child_top(Stretch(0.01))
+                    .child_bottom(Stretch(0.01))
+                    .class("link-section");
             })
-            .row_between(Pixels(10.0))
-            .child_space(Stretch(1.0))
-            .class("title-section");
+                .row_between(Pixels(10.0))
+                .child_space(Stretch(1.0))
+                .class("title-section");
 
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |params| &params.tune, false)
-                    .width(Stretch(1.0));
+                SingleKnob::new(cx, Data::params, |params| &params.tune, false).width(Stretch(1.0));
 
                 SingleKnob::new(cx, Data::params, |params| &params.sweep, false)
                     .width(Stretch(1.0));
 
                 SingleKnob::new(cx, Data::params, |params| &params.pitch_decay, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.analog_variation, false)
                     .width(Stretch(1.0));
 
                 SingleKnob::new(cx, Data::params, |params| &params.drive, false)
@@ -81,6 +126,9 @@ pub(crate) fn create(
                 SingleKnob::new(cx, Data::params, |params| &params.drive_model, false)
                     .width(Stretch(1.0));
             })
+            .width(Stretch(1.0))
+            .left(Stretch(0.05))
+            .right(Stretch(0.05))
             .class("finetune-section-inner");
 
             HStack::new(cx, |cx| {
@@ -90,7 +138,7 @@ pub(crate) fn create(
                 SingleKnob::new(cx, Data::params, |params| &params.tex_decay, false)
                     .width(Stretch(1.0));
 
-                SingleKnob::new(cx, Data::params, |params| &params.randomness, false)
+                SingleKnob::new(cx, Data::params, |params| &params.tex_variation, false)
                     .width(Stretch(1.0));
 
                 SingleKnob::new(cx, Data::params, |params| &params.tex_type, false)
@@ -99,7 +147,10 @@ pub(crate) fn create(
                 SingleKnob::new(cx, Data::params, |params| &params.tex_tone, false)
                     .width(Stretch(1.0));
             })
-                .class("finetune-section-inner");
+            .width(Stretch(1.0))
+            .left(Stretch(0.05))
+            .right(Stretch(0.05))
+            .class("finetune-section-inner");
 
             HStack::new(cx, |cx| {
                 SingleKnob::new(cx, Data::params, |params| &params.attack, false)
@@ -114,6 +165,9 @@ pub(crate) fn create(
                 SingleKnob::new(cx, Data::params, |params| &params.release, false)
                     .width(Stretch(1.0));
             })
+            .width(Stretch(1.0))
+            .left(Stretch(0.05))
+            .right(Stretch(0.05))
             .class("finetune-section-inner");
 
             // Trigger Button
@@ -128,12 +182,12 @@ pub(crate) fn create(
             )
             .left(Stretch(1.0))
             .right(Stretch(1.0))
+            .top(Stretch(0.05))
+            .bottom(Stretch(0.05))
             .width(Pixels(250.0))
             .height(Pixels(60.0))
             .child_space(Stretch(1.0)); // Center text horizontally and vertically
         })
-        .width(Stretch(1.0))
-        .height(Stretch(1.0))
         .class("main-gui");
         ResizeHandle::new(cx);
     })

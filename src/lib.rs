@@ -90,9 +90,13 @@ struct KickParams {
     #[id = "tex_decay"]
     pub tex_decay: FloatParam,
 
-    /// Texture Randomness (0.0 = static, 1.0 = completely random)
-    #[id = "randomness"]
-    pub randomness: FloatParam,
+    /// Texture Variation (0.0 = static, 1.0 = completely random)
+    #[id = "tex_variation"]
+    pub tex_variation: FloatParam,
+
+    /// Analog Pitch Drift Variation (0.0 = stable, 1.0 = constantly drifting)
+    #[id = "analog_variation"]
+    pub analog_variation: FloatParam,
 
     /// Texture Type (1: Dust, 2: Crackle, 3: Sampled Noise, 4: Organic WT, 5: Vinyl Hiss/Pop, 6: Electrical Zap)
     #[id = "tex_type"]
@@ -154,7 +158,7 @@ impl Default for KickParams {
                     max: 1000.0,
                 },
             )
-            .with_value_to_string(formatters::v2s_f32_rounded(0)),
+            .with_value_to_string(Arc::new(move |value| format!("{:.0} hz", value))),
 
             pitch_decay: FloatParam::new(
                 "Decay",
@@ -187,15 +191,27 @@ impl Default for KickParams {
                 "Tex Decay",
                 150.0,
                 FloatRange::Linear {
-                    min: 10.0,
-                    max: 1000.0,
+                    min: 5.0,
+                    max: 650.0,
                 },
             )
-                .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
+            .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
 
-            randomness: FloatParam::new("Randomness", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
-                .with_unit("%")
-                .with_value_to_string(formatters::v2s_f32_percentage(0)),
+            tex_variation: FloatParam::new(
+                "Tex Variation",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            analog_variation: FloatParam::new(
+                "Analog Instability",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             tex_type: IntParam::new(
                 "Tex Type",
@@ -210,7 +226,7 @@ impl Default for KickParams {
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             attack: FloatParam::new(
-                "A",
+                "[A]",
                 0.1,
                 FloatRange::Linear {
                     min: 0.1,
@@ -220,7 +236,7 @@ impl Default for KickParams {
             .with_value_to_string(Arc::new(move |value| format!("{:.1} ms", value))),
 
             decay: FloatParam::new(
-                "D",
+                "[D]",
                 153.0,
                 FloatRange::Linear {
                     min: 10.0,
@@ -229,11 +245,11 @@ impl Default for KickParams {
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
 
-            sustain: FloatParam::new("S", 0.44, FloatRange::Linear { min: 0.0, max: 1.0 })
+            sustain: FloatParam::new("[S]", 0.44, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             release: FloatParam::new(
-                "R",
+                "[R]",
                 128.0,
                 FloatRange::Linear {
                     min: 10.0,
@@ -261,7 +277,8 @@ impl Default for KickSynth {
             let phase_offset = next_rd() * std::f32::consts::PI * 2.0;
             let amp = 1.0 / (harmonic.powf(1.5));
             for j in 0..2048 {
-                let phase = (j as f32 / 2048.0) * harmonic * std::f32::consts::PI * 2.0 + phase_offset;
+                let phase =
+                    (j as f32 / 2048.0) * harmonic * std::f32::consts::PI * 2.0 + phase_offset;
                 wavetable[j] += phase.sin() * amp;
             }
         }
@@ -413,7 +430,6 @@ impl Plugin for KickSynth {
 
             // 2. MIDI Handle
             while let Some(event) = next_event {
-
                 if event.timing() > sample_idx as u32 {
                     break;
                 }
@@ -445,7 +461,9 @@ impl Plugin for KickSynth {
             // 3. DSP
             let mut output = 0.0;
 
-            if self.current_phase != EnvelopePhase::Idle || self.tex_env_phase != EnvelopePhase::Idle {
+            if self.current_phase != EnvelopePhase::Idle
+                || self.tex_env_phase != EnvelopePhase::Idle
+            {
                 let base_freq = self.params.tune.smoothed.next();
                 let sweep_amt = self.params.sweep.smoothed.next();
                 let pitch_decay_ms = self.params.pitch_decay.smoothed.next();
@@ -454,7 +472,8 @@ impl Plugin for KickSynth {
 
                 let tex_amt = self.params.tex_amt.smoothed.next();
                 let tex_decay_ms = self.params.tex_decay.smoothed.next();
-                let rand_param = self.params.randomness.smoothed.next();
+                let rand_param = self.params.tex_variation.smoothed.next();
+                let analog_param = self.params.analog_variation.smoothed.next();
                 let tex_type = self.params.tex_type.value();
                 let tex_tone = self.params.tex_tone.smoothed.next();
 
@@ -530,7 +549,8 @@ impl Plugin for KickSynth {
                     0.0
                 };
 
-                let current_freq = base_freq + self.analog_drift + (sweep_amt * pitch_env_val);
+                let current_freq =
+                    base_freq + (self.analog_drift * analog_param) + (sweep_amt * pitch_env_val);
                 let phase_inc = current_freq / sample_rate;
                 self.phase = (self.phase + phase_inc).fract();
 
@@ -560,50 +580,66 @@ impl Plugin for KickSynth {
                 }
 
                 if self.tex_env_phase != EnvelopePhase::Idle && tex_amt > 0.0 {
-                    self.static_rng_state = self.static_rng_state.wrapping_mul(1664525).wrapping_add(1013904223);
-                    self.free_rng_state = self.free_rng_state.wrapping_mul(1664525).wrapping_add(1013904223);
+                    self.static_rng_state = self
+                        .static_rng_state
+                        .wrapping_mul(1664525)
+                        .wrapping_add(1013904223);
+                    self.free_rng_state = self
+                        .free_rng_state
+                        .wrapping_mul(1664525)
+                        .wrapping_add(1013904223);
 
                     let static_val = (self.static_rng_state as f32) / (u32::MAX as f32);
                     let free_val = (self.free_rng_state as f32) / (u32::MAX as f32);
-                    
+
                     let static_sym = static_val * 2.0 - 1.0;
                     let free_sym = free_val * 2.0 - 1.0;
 
                     let noise_val = match tex_type {
                         1 => {
                             let threshold = 0.999 - (tex_tone * 0.1);
-                            let static_dust = if static_val > threshold { static_sym } else { 0.0 };
+                            let static_dust = if static_val > threshold {
+                                static_sym
+                            } else {
+                                0.0
+                            };
                             let free_dust = if free_val > threshold { free_sym } else { 0.0 };
-                            let raw_dust = static_dust * (1.0 - rand_param) + free_dust * rand_param;
-                            
+                            let raw_dust =
+                                static_dust * (1.0 - rand_param) + free_dust * rand_param;
+
                             // Lowpass filter explicitly mapped by tex_tone
                             let cutoff = 8000.0 * (1.0 - tex_tone * 0.9);
                             let dt = 1.0 / sample_rate;
                             let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
                             let alpha = dt / (rc + dt);
-                            
+
                             self.tex_filter_state += alpha * (raw_dust - self.tex_filter_state);
                             self.tex_filter_state * 3.0
-                        },
+                        }
                         2 => {
                             let cutoff = 200.0 * (50.0_f32).powf(tex_tone);
                             let dt = 1.0 / sample_rate;
                             let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
                             let alpha = dt / (rc + dt);
-                            
+
                             let eq_pwr_static = (1.0 - rand_param).sqrt();
                             let eq_pwr_free = rand_param.sqrt();
-                            let combined_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
-                            
-                            self.tex_filter_state += alpha * (combined_noise - self.tex_filter_state);
-                            let shaped = self.tex_filter_state * self.tex_filter_state * self.tex_filter_state * 10.0;
+                            let combined_noise =
+                                static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+
+                            self.tex_filter_state +=
+                                alpha * (combined_noise - self.tex_filter_state);
+                            let shaped = self.tex_filter_state
+                                * self.tex_filter_state
+                                * self.tex_filter_state
+                                * 10.0;
                             shaped.clamp(-1.0, 1.0)
-                        },
+                        }
                         3 => {
                             // Sampled Noise playback
                             let mut t = self.wt_phase * (self.sampled_noise.len() as f32);
                             let playback_speed = 0.5 + tex_tone;
-                            
+
                             self.wt_phase += playback_speed / sample_rate;
                             if self.wt_phase >= 1.0 {
                                 self.wt_phase -= 1.0;
@@ -611,57 +647,62 @@ impl Plugin for KickSynth {
                             if self.wt_phase < 0.0 {
                                 self.wt_phase += 1.0;
                             }
-                            
+
                             t = t.clamp(0.0, (self.sampled_noise.len() - 2) as f32);
                             let idx1 = t as usize;
                             let idx2 = idx1 + 1;
                             let frac = t.fract();
-                            
+
                             let s1 = self.sampled_noise[idx1];
                             let s2 = self.sampled_noise[idx2];
                             s1 + frac * (s2 - s1)
-                        },
+                        }
                         4 => {
                             let base_freq = 20.0 * (50.0_f32).powf(tex_tone);
                             let eq_pwr_static = (1.0 - rand_param).sqrt();
                             let eq_pwr_free = rand_param.sqrt();
-                            let combined_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
-                            
+                            let combined_noise =
+                                static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+
                             let freq = base_freq * (1.0 + 0.05 * combined_noise);
                             let phase_inc = freq / sample_rate;
                             self.wt_phase = (self.wt_phase + phase_inc).fract();
-                            
+
                             let wt_len = self.wavetable.len() as f32;
                             let idx = self.wt_phase * wt_len;
                             let idx_i = idx as usize;
                             let idx_next = (idx_i + 1) % self.wavetable.len();
                             let frac = idx.fract();
-                            
+
                             let s1 = self.wavetable[idx_i];
                             let s2 = self.wavetable[idx_next];
                             s1 + frac * (s2 - s1)
-                        },
+                        }
                         5 => {
                             // Vinyl Hiss & Pop
                             let eq_pwr_static = (1.0 - rand_param).sqrt();
                             let eq_pwr_free = rand_param.sqrt();
                             let hiss_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
-                            
+
                             // Pop generator
                             let mix_val = static_val * (1.0 - rand_param) + free_val * rand_param;
                             let pop_threshold = 0.9995 - (tex_tone * 0.005);
-                            let pop = if mix_val > pop_threshold { 1.5 * hiss_noise.signum() } else { 0.0 };
-                            
+                            let pop = if mix_val > pop_threshold {
+                                1.5 * hiss_noise.signum()
+                            } else {
+                                0.0
+                            };
+
                             // Soft filter on hiss
                             let cutoff = 4000.0;
                             let dt = 1.0 / sample_rate;
                             let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
                             let alpha = dt / (rc + dt);
                             self.tex_filter_state += alpha * (hiss_noise - self.tex_filter_state);
-                            
+
                             let noise = self.tex_filter_state * 0.3 + pop;
                             noise.clamp(-1.0, 1.0)
-                        },
+                        }
                         6 => {
                             // Electrical Zap/FM style burst
                             let freq = 1000.0 * (4.0_f32).powf(tex_tone);
@@ -669,31 +710,40 @@ impl Plugin for KickSynth {
                             if rand_param <= 0.0 {
                                 mod_freq = freq * 0.5; // Ensure mode is interesting at 0.0 randomness
                             }
-                            
+
                             // Free-running modulator
                             let drift = (free_val - 0.5) * 200.0 * rand_param;
-                            self.tex_filter_state_2 = (self.tex_filter_state_2 + (mod_freq + drift) / sample_rate).fract();
+                            self.tex_filter_state_2 = (self.tex_filter_state_2
+                                + (mod_freq + drift) / sample_rate)
+                                .fract();
                             let mo = (self.tex_filter_state_2 * 2.0 * std::f32::consts::PI).sin();
-                            
-                            self.wt_phase = (self.wt_phase + (freq + mo * 1000.0) / sample_rate).fract();
+
+                            self.wt_phase =
+                                (self.wt_phase + (freq + mo * 1000.0) / sample_rate).fract();
                             (self.wt_phase * 2.0 * std::f32::consts::PI).sin() * 0.6
-                        },
+                        }
                         _ => 0.0,
                     };
-                    tex_signal = noise_val * self.tex_env_value * tex_amt * 0.4;
+                    tex_signal = noise_val * self.tex_env_value * tex_amt * 0.4 * 0.7;
+                    // Lowered texture volume by 30%
                 }
 
                 let pre_drive = signal + tex_signal;
 
                 let driven_signal = match drive_model {
-                    1 => Self::drive_tape_classic(drive, pre_drive),
-                    2 => Self::drive_tape_modern(drive, pre_drive),
-                    3 => Self::drive_tube_triode(drive, pre_drive),
+                    1 => Self::drive_tape_classic(drive, pre_drive) * 0.866, // -1.25 dB offset
+                    2 => Self::drive_tape_modern(drive, pre_drive) * 1.412,  // +3.0 dB offset
+                    3 => Self::drive_tube_triode(drive, pre_drive) * 0.917,  // -0.75 dB offset
                     4 => Self::drive_tube_pentode(drive, pre_drive),
-                    5 => Self::drive_saturation_digital(drive, pre_drive),
-                    _ => Self::drive_tape_classic(drive, pre_drive),
+                    5 => Self::drive_saturation_digital(drive, pre_drive) * 0.729, // -2.75 dB offset
+                    _ => Self::drive_tape_classic(drive, pre_drive) * 0.866,
                 };
-                output = driven_signal * self.midi_velocity * 0.9;
+
+                // Ensure all distortion types sound clean when gain is 0% using a dry/wet crossfade mapping
+                let drive_wet = drive.sqrt(); // Keep curve musical
+                let final_signal = pre_drive * (1.0 - drive_wet) + driven_signal * drive_wet;
+
+                output = final_signal * self.midi_velocity * 0.9;
 
                 if self.current_phase != EnvelopePhase::Idle {
                     self.pitch_env_timer += 1.0;
@@ -723,9 +773,16 @@ impl KickSynth {
         self.phase = 0.0; // Start at 0-crossing
         self.envelope_value = 0.0;
         self.release_early = false;
-        
+
+        // Advance RNG state for analog drift so we always get a new pitch offset
+        // regardless of whether texture generation is active.
+        self.free_rng_state = self
+            .free_rng_state
+            .wrapping_mul(1664525)
+            .wrapping_add(1013904223);
+
         // Calculate analog drift for this hit
-        self.analog_drift = ((self.free_rng_state as f32 / u32::MAX as f32) * 2.0 - 1.0) * 1.5; // +/- 1.5 Hz 
+        self.analog_drift = ((self.free_rng_state as f32 / u32::MAX as f32) * 2.0 - 1.0) * 1.5; // +/- 1.5 Hz
 
         self.tex_env_phase = EnvelopePhase::Decay;
         self.tex_env_value = 1.0;
@@ -737,11 +794,12 @@ impl KickSynth {
     fn release_note(&mut self) {
         // If attack or decay, we set `release_early` to skip sustain and decay smoothly to 0.
         // If sustain, we just go to release.
-        if self.current_phase == EnvelopePhase::Attack || self.current_phase == EnvelopePhase::Decay {
+        if self.current_phase == EnvelopePhase::Attack || self.current_phase == EnvelopePhase::Decay
+        {
             self.release_early = true;
         } else if self.current_phase == EnvelopePhase::Sustain {
-             self.current_phase = EnvelopePhase::Release;
-             self.phase_timer = 0.0;
+            self.current_phase = EnvelopePhase::Release;
+            self.phase_timer = 0.0;
         }
 
         // The texture envelope is a one-shot and should not be affected by note release.

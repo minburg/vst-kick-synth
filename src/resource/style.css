@@ -42,7 +42,7 @@
 
 .vu-meter {
     background-color: rgba(0, 0, 0, 0.47);
-    color: #d28819;
+    color: #c6a863;
     font-size: 18.0;
     font-family: "Comfortaa";
 }
@@ -60,9 +60,9 @@
 }
 
 .header-title {
-    background-color: #512540;
+    background-color: #614963;
 
-    color: #d28819;
+    color: #c6a863;
     font-size: 55.0;
     font-weight: bold;
     font-family: "Comfortaa";
@@ -71,7 +71,7 @@
 .header-version-title {
     background-color: #512540;
 
-    color: #d28819;
+    color: #c6a863;
     font-size: 25.0;
     font-weight: bold;
     font-family: "Comfortaa";
@@ -96,7 +96,7 @@
 
 .knob-arc {
     background-color: #74355C;
-    color: #d28819;
+    color: #c6a863;
 }
 
 .knob-hitbox {
@@ -105,25 +105,33 @@
 }
 
 .param-label {
-    color: #d28819;
+    color: #c6a863;
     font-size: 28.0;
     font-family: "Orbitron";
 }
 
 .single-knob-label {
-    color: #d28819;
-    font-size: 15.0;
+    color: #c6a863;
+    font-size: 18.0;
     font-family: "Comfortaa";
 }
 
 .single-knob-arc {
     background-color: #74355C;
-    color: #d28819;
+    color: #c6a863;
 }
 
 .single-knob-hitbox {
-    background-color: rgba(0, 0, 0, 0);
+    background-color: rgba(220, 81, 81, 0);
     border-radius: 50%;
+}
+
+.vintage-knob {
+    width: 100%;
+    height: 100%;
+    background-color: rgba(123, 20, 152, 0);
+    background-image: url("poti_3_fixed_small.png");
+    background-size: cover;
 }
 
 .finetune-section {
@@ -134,16 +142,16 @@
     child-top: 20px;
 }
 .finetune-section-inner {
-    background-color: rgba(0, 0, 0, 0.15);
+    background-color: rgba(0, 0, 0, 0.4);
     border-radius: 8px;
-    border-width: 2px;
-    border-color: rgba(0, 0, 0, 0.15);
+    border-width: 3px;
+    border-color: rgba(0, 0, 0, 0.7);
 }
 
 .update-link {
     /* Make it look clickable */
     cursor: pointer;
-    color: #d28819;
+    color: #c6a863;
     font-size: 20.0;
     font-weight: bold;
     font-family: "Comfortaa";
@@ -179,8 +187,8 @@
     border-width: 1px;
     border-color: #000000;
 
-    background-color: #512540;
-    color: #d28819;
+    background-color: #74355C;
+    color: #c6a863;
     font-size: 30.0;
     font-weight: bold;
     font-family: "Comfortaa";
@@ -188,7 +196,7 @@
 
 .broken-param-button:hover {
     background-color: rgba(81, 37, 64, 0.5);
-    color: #d28819;
+    color: #c6a863;
 }
 
 .broken-param-button.active {
@@ -208,7 +216,7 @@
     border-color: #000000;
 
     background-color: #512540;
-    color: #d28819;
+    color: #c6a863;
     font-size: 30.0;
     font-weight: bold;
     font-family: "Comfortaa";
@@ -216,11 +224,11 @@
 
 .sync-param-button:hover {
     background-color: rgba(81, 37, 64, 0.5);
-    color: #d28819;
+    color: #c6a863;
 }
 
 .sync-param-button.active {
-    background-color: #d28819;
+    background-color: #c6a863;
     color: #512540;
 }
 
@@ -235,7 +243,7 @@
     border-width: 1px;
     border-color: #000000;
 
-    background-color: #915607;
+    background-color: #74355C;
     color: #d3a9c3;
 
     border-radius: 15px;
