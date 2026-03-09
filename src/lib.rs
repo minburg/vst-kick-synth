@@ -217,13 +217,13 @@ impl Default for KickParams {
                 _ => "Unknown".to_string(),
             })),
 
-            tex_amt: FloatParam::new("Tex Amount", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
+            tex_amt: FloatParam::new("Tex Amount", 0.2, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             tex_decay: FloatParam::new(
                 "Tex Decay",
-                150.0,
+                80.0,
                 FloatRange::Linear {
                     min: 5.0,
                     max: 650.0,
@@ -892,26 +892,35 @@ impl Plugin for KickSynth {
                     let raw_noise_r =
                         (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
 
-                    // 3. Bandpass-filter noise (2nd-order approximation: LP then HP derived
-                    //    from LP; bandwidth controlled by corr_width)
-                    let lp_cutoff =
-                        (corr_freq * corr_width.max(0.01)).min(sample_rate * 0.499);
-                    let hp_cutoff = (corr_freq / corr_width.max(0.01).max(1.0)).max(1.0);
-                    let dt   = 1.0 / sample_rate;
-                    let lp_a = dt / (1.0 / (std::f32::consts::TAU * lp_cutoff) + dt);
-                    let hp_a = dt / (1.0 / (std::f32::consts::TAU * hp_cutoff) + dt);
+                    // 3. State-Variable Filter (SVF) Bandpass for noise
+                    // `corr_width` (0.0 to 1.0) maps to Q from wide (0.5) to highly resonant (10.0+)
+                    let q = 0.5 + (1.0 - corr_width) * 15.0;
+                    
+                    // Makeup gain to compensate for energy lost at high Q (narrow bandwidth)
+                    let makeup_gain = (q * 0.4).max(1.0);
 
-                    // Left channel BP
-                    self.corrosion_bp_l[0] += lp_a * (raw_noise_l - self.corrosion_bp_l[0]);
-                    let lp_l = self.corrosion_bp_l[0];
-                    self.corrosion_bp_l[1] += hp_a * (lp_l - self.corrosion_bp_l[1]);
-                    let bp_l = lp_l - self.corrosion_bp_l[1]; // bandpass = LP - LP-of-LP
+                    // SVF Pre-warped frequency
+                    let g = (std::f32::consts::PI * corr_freq / sample_rate).tan();
+                    let k = 1.0 / q;
+                    let a1 = 1.0 / (1.0 + g * (g + k));
+                    let a2 = g * a1;
+                    let a3 = g * a2;
 
-                    // Right channel BP
-                    self.corrosion_bp_r[0] += lp_a * (raw_noise_r - self.corrosion_bp_r[0]);
-                    let lp_r = self.corrosion_bp_r[0];
-                    self.corrosion_bp_r[1] += hp_a * (lp_r - self.corrosion_bp_r[1]);
-                    let bp_r = lp_r - self.corrosion_bp_r[1];
+                    // Left channel SVF
+                    let v3_l = raw_noise_l - self.corrosion_bp_l[1];
+                    let v1_l = a1 * self.corrosion_bp_l[0] + a2 * v3_l;
+                    let v2_l = self.corrosion_bp_l[1] + a2 * self.corrosion_bp_l[0] + a3 * v3_l;
+                    self.corrosion_bp_l[0] = 2.0 * v1_l - self.corrosion_bp_l[0];
+                    self.corrosion_bp_l[1] = 2.0 * v2_l - self.corrosion_bp_l[1];
+                    let bp_l = v1_l * makeup_gain;
+
+                    // Right channel SVF
+                    let v3_r = raw_noise_r - self.corrosion_bp_r[1];
+                    let v1_r = a1 * self.corrosion_bp_r[0] + a2 * v3_r;
+                    let v2_r = self.corrosion_bp_r[1] + a2 * self.corrosion_bp_r[0] + a3 * v3_r;
+                    self.corrosion_bp_r[0] = 2.0 * v1_r - self.corrosion_bp_r[0];
+                    self.corrosion_bp_r[1] = 2.0 * v2_r - self.corrosion_bp_r[1];
+                    let bp_r = v1_r * makeup_gain;
 
                     // 4. Stereo decorrelation for noise (lerp from mono L → uncorrelated R)
                     let noise_l = bp_l;
@@ -1020,107 +1029,94 @@ impl KickSynth {
         // The texture envelope is a one-shot and should not be affected by note release.
     }
 
-    // Tape Saturation Type 1: Classic Analog Tape (Soft Knee)
-    // Models vintage tape machines with smooth, musical saturation and hysteresis-like behavior
+    // Tape Saturation Type 1: Classic Analog Tape (Warm, Smooth, Symmetrical)
+    // High headroom before soft clipping. Emphasizes 3rd harmonics smoothly.
     fn drive_tape_classic(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 12.0;
+        let gain = 1.0 + drive * 24.0; // Higher max gain
         let x = signal * gain;
-
-        // Soft saturation curve with tape-like compression
-        let saturated = if x.abs() < 0.5 {
-            x * (1.0 - 0.15 * x.abs())
-        } else {
-            let sign = x.signum();
-            sign * (0.425 + 0.575 * (1.0 - (-(x.abs() - 0.5) * 3.0).exp()))
-        };
-
-        // Apply gentle high-frequency rolloff simulation
-        saturated * 0.85
+        
+        // Pade approximant for tanh (very smooth, classic tape curve)
+        let x2 = x * x;
+        let saturated = x * (27.0 + x2) / (27.0 + 9.0 * x2);
+        
+        saturated.clamp(-1.2, 1.2) * 0.9
     }
 
-    // Tape Saturation Type 2: Modern High-Bias Tape (Asymmetric)
-    // Models modern tape with asymmetric clipping and warmth
+    // Tape Saturation Type 2: Modern Auto-Bias Tape (Highly Asymmetrical)
+    // Pushes positive peaks much harder than negative peaks, creating a thick sound.
     fn drive_tape_modern(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 10.0;
+        let gain = 1.0 + drive * 28.0;
         let x = signal * gain;
 
-        // Asymmetric tape saturation (positive/negative behave differently)
         let saturated = if x >= 0.0 {
-            // Positive: harder saturation
-            x / (1.0 + x.abs().powf(1.4))
+            // Harder saturation on positive half (flattens out)
+            x / (1.0 + x.powf(1.5))
         } else {
-            // Negative: softer saturation
-            x / (1.0 + (x.abs() * 0.85).powf(1.2))
+            // Softer curve on negative half (bulges out)
+            let abs_x = x.abs();
+            -(abs_x / (1.0 + abs_x.powf(0.8)))
         };
 
-        saturated * 0.9
+        saturated.clamp(-1.5, 1.5) * 0.8
     }
 
-    // Tube Saturation Type 1: Triode Tube (Warm, Musical)
-    // Models classic triode tube stages with even/odd harmonics
+    // Tube Saturation Type 1: Triode Tube (Strong Even Harmonics)
+    // Shifts the transfer function off-center to generate heavy 2nd order harmonics.
     fn drive_tube_triode(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 15.0;
+        let gain = 1.0 + drive * 30.0;
         let x = signal * gain;
 
-        // Triode-style transfer curve with crossover distortion
-        let saturated = if x.abs() < 0.1 {
-            x * 0.95 // Slight deadzone for tube character
-        } else {
-            // Soft tube saturation using tanh for guaranteed bounding
-            let sign = x.signum();
-            let abs_x = x.abs();
-            let mapped = (abs_x - 0.1) * 1.5;
-            sign * (0.095 + mapped.tanh() * 0.905)
-        };
+        // Asymmetric waveshaping: x + a*x^2
+        // We blend the x^2 term based on drive to increase even harmonics
+        let asymmetry = 0.3 * drive;
+        let shaped = x + asymmetry * x * x;
 
-        // Output scaling with tube warmth
-        saturated * 0.75
+        // Soft clip the shaped signal
+        let saturated = shaped / (1.0 + shaped.abs());
+        
+        // DC offset removal (approximate)
+        let dc_fix = saturated - (asymmetry * 0.5);
+        dc_fix.clamp(-1.0, 1.0)
     }
 
-    // Tube Saturation Type 2: Pentode/Power Tube (Aggressive)
-    // Models power tube stages with harder clipping and compression
+    // Tube Saturation Type 2: Pentode/Power Tube (Aggressive, Odd Harmonics)
+    // Harder clipping with a "bite" at the crossover, simulating power amp sag.
     fn drive_tube_pentode(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 18.0;
+        let gain = 1.0 + drive * 35.0;
         let x = signal * gain;
 
-        // Power tube saturation with grid clipping simulation
-        let saturated = if x.abs() < 0.3 {
-            x
+        // Cross-over distortion + hard symmetric clipping
+        let sign = x.signum();
+        let abs_x = x.abs();
+        
+        // Deadzone / sag at 0
+        let sagged = if abs_x < 0.05 {
+            abs_x * 0.5
         } else {
-            // Bounded hard limit transition using atan for stability
-            let sign = x.signum();
-            let abs_x = x.abs();
-            let mapped = (abs_x - 0.3) * 2.0;
-            sign * (0.3 + mapped.atan() * (0.7 / std::f32::consts::FRAC_PI_2))
+            abs_x - 0.025
         };
 
-        saturated * 0.7
+        // Aggressive tanh-like curve
+        let saturated = sign * (1.0 - (-sagged * 2.5).exp());
+        saturated
     }
 
-    // Digital Saturation: Modern Clipper with Oversampling Simulation
-    // Clean, transparent saturation with minimal aliasing artifacts
+    // Digital Saturation: Sine Wavefolder
+    // When driven hard, the signal folds back down instead of clipping (aliasing/FM tone)
     fn drive_saturation_digital(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 20.0;
+        let gain = 1.0 + drive * 40.0;
         let x = signal * gain;
 
-        // Quintic polynomial approximation (C2 continuous)
-        let saturated = if x.abs() <= 1.0 {
-            x * (1.5 - 0.5 * x.abs().powf(2.0))
-        } else {
-            x.signum()
-        };
+        // Wavefolding using Sine
+        // At low drive, sin(x) acts like soft saturation.
+        // At high drive, x exceeds pi/2 and folds back, creating wild harmonics.
+        let folded = (x * std::f32::consts::FRAC_PI_2).sin();
 
-        // Apply soft knee at threshold
-        let threshold = 0.8;
-        let final_signal = if saturated.abs() > threshold {
-            let sign = saturated.signum();
-            let over = saturated.abs() - threshold;
-            sign * (threshold + over / (1.0 + over * 3.0))
-        } else {
-            saturated
-        };
-
-        final_signal * 0.8
+        // Blend between hard clipper and wavefolder to keep it somewhat musical
+        let hard_clip = x.clamp(-1.0, 1.0);
+        
+        // As drive increases, we let more of the folded signal through
+        folded * drive + hard_clip * (1.0 - drive)
     }
 
     /// Fractional delay buffer reader using linear interpolation.
