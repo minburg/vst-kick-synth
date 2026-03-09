@@ -42,6 +42,17 @@ pub struct KickSynth {
     static_rng_state: u32,
     free_rng_state: u32,
 
+    // Corrosion (phase-modulated delay) State
+    corrosion_buf_l: Vec<f32>,
+    corrosion_buf_r: Vec<f32>,
+    corrosion_write: usize,
+    corrosion_sine_phase: f32,
+    // Bandpass filter states for noise modulator (two 1-pole stages each channel)
+    corrosion_bp_l: [f32; 2],
+    corrosion_bp_r: [f32; 2],
+    // Small LCG for corrosion noise generation
+    corrosion_rng: u32,
+
     // Trigger Logic
     was_trigger_on: bool,
     midi_velocity: f32,
@@ -292,13 +303,12 @@ impl Default for KickParams {
 
             corrosion_frequency: FloatParam::new(
                 "Corrosion Freq",
-                2500.0,
-                FloatRange::Linear {
-                    min: 15.0,
-                    max: 22000.0,
-                },
+                0.5, // Default to a middle value in the normalized range
+                FloatRange::Linear { min: 0.0, max: 1.0 },
             )
-            .with_value_to_string(Arc::new(move |value| format!("{:.0} hz", value))),
+            .with_value_to_string(Arc::new(move |value| {
+                format!("{:.0} hz", log_scale(value, 15.0, 22000.0))
+            })),
 
             corrosion_width: FloatParam::new(
                 "Corrosion Width",
@@ -308,8 +318,8 @@ impl Default for KickParams {
             .with_value_to_string(Arc::new(move |value| format!("{:.1}", value))),
 
             corrosion_noise_blend: FloatParam::new(
-                "Corrosion Noise Blend",
-                0.5,
+                "Corrosion Sine ~ Noise",
+                1.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
             .with_unit("%")
@@ -376,6 +386,10 @@ impl Default for KickSynth {
             }
         }
 
+        // 2ms base delay + 1ms max mod depth at 44100 Hz = ~133 samples max
+        // Allocate for up to 192kHz: ceil(192000 * 0.003) = 576, keep power-of-two margin
+        let corrosion_buf_size = 2048usize;
+
         Self {
             params: Arc::new(KickParams::default()),
             sample_rate: 44100.0,
@@ -400,6 +414,14 @@ impl Default for KickSynth {
             sampled_noise,
             static_rng_state: 1337,
             free_rng_state: 80085,
+
+            corrosion_buf_l: vec![0.0; corrosion_buf_size],
+            corrosion_buf_r: vec![0.0; corrosion_buf_size],
+            corrosion_write: 0,
+            corrosion_sine_phase: 0.0,
+            corrosion_bp_l: [0.0; 2],
+            corrosion_bp_r: [0.0; 2],
+            corrosion_rng: 0xDEAD_BEEF,
 
             was_trigger_on: false,
             midi_velocity: 1.0,
@@ -440,6 +462,15 @@ impl Plugin for KickSynth {
         _ctx: &mut impl InitContext<Self>,
     ) -> bool {
         self.sample_rate = _buffer_config.sample_rate;
+
+        // Resize corrosion delay buffers for the actual sample rate.
+        // We need at least (base_delay + max_mod_depth) * sample_rate samples:
+        //   2ms base + 1ms max depth = 3ms => sample_rate * 0.003, rounded up with margin.
+        let corrosion_buf_size = ((_buffer_config.sample_rate * 0.004) as usize + 4).next_power_of_two();
+        self.corrosion_buf_l = vec![0.0; corrosion_buf_size];
+        self.corrosion_buf_r = vec![0.0; corrosion_buf_size];
+        self.corrosion_write = 0;
+
         true
     }
 
@@ -458,6 +489,14 @@ impl Plugin for KickSynth {
         self.release_early = false;
         self.tex_release_early = false;
         self.active_midi_note = None;
+
+        // Clear corrosion state
+        self.corrosion_buf_l.iter_mut().for_each(|s| *s = 0.0);
+        self.corrosion_buf_r.iter_mut().for_each(|s| *s = 0.0);
+        self.corrosion_write = 0;
+        self.corrosion_sine_phase = 0.0;
+        self.corrosion_bp_l = [0.0; 2];
+        self.corrosion_bp_r = [0.0; 2];
     }
 
     fn process(
@@ -531,8 +570,9 @@ impl Plugin for KickSynth {
                 next_event = _ctx.next_event();
             }
 
-            // 3. DSP
-            let mut output = 0.0;
+            // 3. DSP – stereo output pair (L and R may differ due to Corrosion stereo)
+            let mut out_l = 0.0_f32;
+            let mut out_r = 0.0_f32;
 
             if self.current_phase != EnvelopePhase::Idle
                 || self.tex_env_phase != EnvelopePhase::Idle
@@ -814,9 +854,105 @@ impl Plugin for KickSynth {
 
                 // Ensure all distortion types sound clean when gain is 0% using a dry/wet crossfade mapping
                 let drive_wet = drive.sqrt(); // Keep curve musical
-                let final_signal = pre_drive * (1.0 - drive_wet) + driven_signal * drive_wet;
+                let driven = pre_drive * (1.0 - drive_wet) + driven_signal * drive_wet;
 
-                output = final_signal * self.midi_velocity * 0.9;
+                // ----- Corrosion (modulated delay) -----
+                // Returns a stereo (L, R) pair; both are the same when amount == 0.
+                let corr_amount = self.params.corrosion_amount.smoothed.next();
+                let (corr_l, corr_r) = if corr_amount > 0.0 {
+                    let corr_freq_norm = self.params.corrosion_frequency.smoothed.next();
+                    let corr_freq = log_scale(corr_freq_norm, 15.0, 22000.0);
+                    let corr_width  = self.params.corrosion_width.smoothed.next();
+                    let corr_blend  = self.params.corrosion_noise_blend.smoothed.next();
+                    let corr_stereo = self.params.corrosion_stereo.smoothed.next();
+
+                    // Constants matching the Ableton 12.4 spec
+                    const BASE_DELAY: f32    = 0.002; // 2 ms
+                    const MAX_MOD_DEPTH: f32 = 0.001; // 1 ms max fluctuation
+
+                    // 1. Sine modulators (stereo phase offset)
+                    let sine_l = (self.corrosion_sine_phase * std::f32::consts::TAU).sin();
+                    let sine_r = ((self.corrosion_sine_phase * std::f32::consts::TAU)
+                        + corr_stereo * std::f32::consts::PI)
+                        .sin();
+                    self.corrosion_sine_phase =
+                        (self.corrosion_sine_phase + corr_freq / sample_rate).fract();
+
+                    // 2. Independent white noise for each channel (LCG)
+                    self.corrosion_rng = self
+                        .corrosion_rng
+                        .wrapping_mul(1_664_525)
+                        .wrapping_add(1_013_904_223);
+                    let raw_noise_l =
+                        (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
+                    self.corrosion_rng = self
+                        .corrosion_rng
+                        .wrapping_mul(1_664_525)
+                        .wrapping_add(1_013_904_223);
+                    let raw_noise_r =
+                        (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
+
+                    // 3. Bandpass-filter noise (2nd-order approximation: LP then HP derived
+                    //    from LP; bandwidth controlled by corr_width)
+                    let lp_cutoff =
+                        (corr_freq * corr_width.max(0.01)).min(sample_rate * 0.499);
+                    let hp_cutoff = (corr_freq / corr_width.max(0.01).max(1.0)).max(1.0);
+                    let dt   = 1.0 / sample_rate;
+                    let lp_a = dt / (1.0 / (std::f32::consts::TAU * lp_cutoff) + dt);
+                    let hp_a = dt / (1.0 / (std::f32::consts::TAU * hp_cutoff) + dt);
+
+                    // Left channel BP
+                    self.corrosion_bp_l[0] += lp_a * (raw_noise_l - self.corrosion_bp_l[0]);
+                    let lp_l = self.corrosion_bp_l[0];
+                    self.corrosion_bp_l[1] += hp_a * (lp_l - self.corrosion_bp_l[1]);
+                    let bp_l = lp_l - self.corrosion_bp_l[1]; // bandpass = LP - LP-of-LP
+
+                    // Right channel BP
+                    self.corrosion_bp_r[0] += lp_a * (raw_noise_r - self.corrosion_bp_r[0]);
+                    let lp_r = self.corrosion_bp_r[0];
+                    self.corrosion_bp_r[1] += hp_a * (lp_r - self.corrosion_bp_r[1]);
+                    let bp_r = lp_r - self.corrosion_bp_r[1];
+
+                    // 4. Stereo decorrelation for noise (lerp from mono L → uncorrelated R)
+                    let noise_l = bp_l;
+                    let noise_r = noise_l + corr_stereo * (bp_r - noise_l);
+
+                    // 5. Noise-blend: crossfade sine <-> bandpassed noise
+                    let mod_l = sine_l + corr_blend * (noise_l - sine_l);
+                    let mod_r = sine_r + corr_blend * (noise_r - sine_r);
+
+                    // 6. Convert modulation signal to delay time in samples
+                    let delay_samples_l = (BASE_DELAY + mod_l * corr_amount * MAX_MOD_DEPTH)
+                        .max(0.0) * sample_rate;
+                    let delay_samples_r = (BASE_DELAY + mod_r * corr_amount * MAX_MOD_DEPTH)
+                        .max(0.0) * sample_rate;
+
+                    // 7. Write input to delay buffers
+                    let buf_len = self.corrosion_buf_l.len();
+                    self.corrosion_buf_l[self.corrosion_write] = driven;
+                    self.corrosion_buf_r[self.corrosion_write] = driven;
+
+                    // 8. Read back with linear interpolation at the modulated delay time
+                    let read_l = Self::corrosion_read(
+                        &self.corrosion_buf_l,
+                        self.corrosion_write,
+                        delay_samples_l,
+                    );
+                    let read_r = Self::corrosion_read(
+                        &self.corrosion_buf_r,
+                        self.corrosion_write,
+                        delay_samples_r,
+                    );
+
+                    self.corrosion_write = (self.corrosion_write + 1) % buf_len;
+
+                    (read_l, read_r)
+                } else {
+                    (driven, driven)
+                };
+
+                out_l = corr_l * self.midi_velocity * 0.9;
+                out_r = corr_r * self.midi_velocity * 0.9;
 
                 if self.current_phase != EnvelopePhase::Idle {
                     self.pitch_env_timer += 1.0;
@@ -824,8 +960,9 @@ impl Plugin for KickSynth {
                 }
             }
 
-            for sample in channel_samples {
-                *sample = output;
+            // Write stereo output
+            for (ch_idx, sample) in channel_samples.into_iter().enumerate() {
+                *sample = if ch_idx == 0 { out_l } else { out_r };
             }
         }
 
@@ -835,6 +972,11 @@ impl Plugin for KickSynth {
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
         editor::create(self.params.clone(), self.params.editor_state.clone())
     }
+}
+
+// Helper function to map a 0-1 value to a logarithmic frequency range
+fn log_scale(value: f32, min: f32, max: f32) -> f32 {
+    min * (max / min).powf(value)
 }
 
 impl KickSynth {
@@ -979,6 +1121,25 @@ impl KickSynth {
         };
 
         final_signal * 0.8
+    }
+
+    /// Fractional delay buffer reader using linear interpolation.
+    /// `buf` is a circular delay buffer, `write_pos` is the current write head,
+    /// `delay_samples` is the number of samples to look back (may be fractional).
+    fn corrosion_read(buf: &[f32], write_pos: usize, delay_samples: f32) -> f32 {
+        let len = buf.len();
+        let delay_i = delay_samples as usize;
+        let frac    = delay_samples - delay_i as f32;
+
+        // Clamp so we never exceed the buffer length
+        let delay_i = delay_i.min(len - 1);
+
+        // Read head (going backward from the write position)
+        let idx0 = (write_pos + len - delay_i)     % len;
+        let idx1 = (write_pos + len - delay_i - 1) % len;
+
+        // Linear interpolation between the two adjacent samples
+        buf[idx0] + frac * (buf[idx1] - buf[idx0])
     }
 }
 

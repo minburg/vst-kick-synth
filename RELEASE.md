@@ -1,6 +1,6 @@
 # Release & Semantic Versioning Guide
 
-This project utilizes an automated CI/CD pipeline via GitHub Actions to build, bundle, and release the **Tape Delay** plugin. Following the steps below ensures that cross-platform binaries are generated correctly and versioned according to [Semantic Versioning (SemVer)](https://semver.org/) standards.
+This project utilizes an automated CI/CD pipeline via GitHub Actions to build, bundle, and release the **Kick Synthesizer** plugin. Following the steps below ensures that cross-platform binaries are generated correctly and versioned according to [Semantic Versioning (SemVer)](https://semver.org/) standards.
 
 ---
 
