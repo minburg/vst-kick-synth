@@ -122,6 +122,21 @@ struct KickParams {
     #[id = "release"]
     pub release: FloatParam,
 
+    #[id = "corrosion_frequency"]
+    pub corrosion_frequency: FloatParam,
+
+    #[id = "corrosion_width"]
+    pub corrosion_width: FloatParam,
+
+    #[id = "corrosion_noise_blend"]
+    pub corrosion_noise_blend: FloatParam,
+
+    #[id = "corrosion_stereo"]
+    pub corrosion_stereo: FloatParam,
+
+    #[id = "corrosion_amount"]
+    pub corrosion_amount: FloatParam,
+
     /// Manual Trigger Button
     #[id = "trigger"]
     pub trigger: BoolParam,
@@ -181,7 +196,15 @@ impl Default for KickParams {
                     min: 1i32,
                     max: 5i32,
                 },
-            ),
+            )
+            .with_value_to_string(Arc::new(|value| match value {
+                1 => "Tape Classic".to_string(),
+                2 => "Tape Modern".to_string(),
+                3 => "Tube Triode".to_string(),
+                4 => "Tube Pentode".to_string(),
+                5 => "Digital".to_string(),
+                _ => "Unknown".to_string(),
+            })),
 
             tex_amt: FloatParam::new("Tex Amount", 0.0, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
@@ -220,7 +243,16 @@ impl Default for KickParams {
                     min: 1i32,
                     max: 6i32,
                 },
-            ),
+            )
+            .with_value_to_string(Arc::new(|value| match value {
+                1 => "Dust".to_string(),
+                2 => "Crackle".to_string(),
+                3 => "Sampled".to_string(),
+                4 => "Organic".to_string(),
+                5 => "Vinyl".to_string(),
+                6 => "Zap".to_string(),
+                _ => "Unknown".to_string(),
+            })),
 
             tex_tone: FloatParam::new("Tex Tone", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
@@ -257,6 +289,47 @@ impl Default for KickParams {
                 },
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
+
+            corrosion_frequency: FloatParam::new(
+                "Corrosion Freq",
+                2500.0,
+                FloatRange::Linear {
+                    min: 15.0,
+                    max: 22000.0,
+                },
+            )
+            .with_value_to_string(Arc::new(move |value| format!("{:.0} hz", value))),
+
+            corrosion_width: FloatParam::new(
+                "Corrosion Width",
+                0.5,
+                FloatRange::Linear { min: 0.1, max: 2.5 },
+            )
+            .with_value_to_string(Arc::new(move |value| format!("{:.1}", value))),
+
+            corrosion_noise_blend: FloatParam::new(
+                "Corrosion Noise Blend",
+                0.5,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            corrosion_stereo: FloatParam::new(
+                "Corrosion Stereo",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            corrosion_amount: FloatParam::new(
+                "Corrosion Amount",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             trigger: BoolParam::new("Trigger", false),
         }

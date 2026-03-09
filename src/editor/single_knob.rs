@@ -52,16 +52,16 @@ impl SingleKnob {
                             ZStack::new(cx, |cx| {
                                 // Transparent "Hit Surface" to capture mouse everywhere
                                 Element::new(cx)
-                                    .width(Pixels(100.0))
-                                    .height(Pixels(100.0))
+                                    .width(Pixels(95.0))
+                                    .height(Pixels(95.0))
                                     .class("single-knob-hitbox");
 
                                 // Vintage Knob Image
                                 // This element replaces the arc. Define the image in CSS using the .vintage-knob class.
                                 Element::new(cx)
                                     .class("vintage-knob")
-                                    .width(Pixels(100.0))
-                                    .height(Pixels(100.0))
+                                    .width(Pixels(95.0))
+                                    .height(Pixels(95.0))
                                     // Rotate from -150 deg (at 0.0) to 150 deg (at 1.0)
                                     .rotate(lens.map(|val| Angle::Deg(val * 300.0 - 18.0)));
                             })

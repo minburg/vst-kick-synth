@@ -17,7 +17,7 @@ pub const ORBITRON_TTF: &[u8] = include_bytes!("resource/fonts/Orbitron-Regular.
 pub const COMFORTAA_LIGHT_TTF: &[u8] = include_bytes!("resource/fonts/Comfortaa-Light.ttf");
 pub const COMFORTAA: &str = "Comfortaa";
 
-const BG_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/kick_background_2.png");
+const BG_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/kick_background_tint_cropped.png");
 const POTI_3_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/poti_3_fixed_small.png");
 const INSTA_ICON_BYTES: &[u8] = include_bytes!("resource/images/instagram_icon.png");
 const SPOTIFY_ICON_BYTES: &[u8] = include_bytes!("resource/images/spotify_icon.png");
@@ -32,7 +32,7 @@ struct Data {
 impl Model for Data {}
 
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1300, 750))
+    ViziaState::new(|| (1400, 950))
 }
 
 pub(crate) fn create(
@@ -169,6 +169,27 @@ pub(crate) fn create(
             .left(Stretch(0.05))
             .right(Stretch(0.05))
             .class("finetune-section-inner");
+
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |params| &params.corrosion_frequency, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.corrosion_width, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.corrosion_noise_blend, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.corrosion_stereo, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.corrosion_amount, false)
+                    .width(Stretch(1.0));
+            })
+                .width(Stretch(1.0))
+                .left(Stretch(0.05))
+                .right(Stretch(0.05))
+                .class("finetune-section-inner");
 
             // Trigger Button
             create_text_button(
