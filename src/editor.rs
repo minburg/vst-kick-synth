@@ -252,6 +252,7 @@ pub(crate) fn create(
                 .height(Stretch(0.7));
         })
         .class("main-gui");
+
         ResizeHandle::new(cx);
     })
 }
