@@ -10,6 +10,11 @@ use std::sync::Arc;
 
 mod editor;
 
+// Helper function to map a 0-1 value to a logarithmic frequency range
+fn log_scale(value: f32, min: f32, max: f32) -> f32 {
+    min * (max / min).powf(value)
+}
+
 pub struct KickSynth {
     params: Arc<KickParams>,
     sample_rate: f32,
@@ -25,7 +30,7 @@ pub struct KickSynth {
     envelope_value: f32,
     current_phase: EnvelopePhase,
     phase_timer: f32,
-    release_early: bool,
+    release_coeff: f32,
 
     // Pitch Envelope State
     pitch_env_timer: f32,
@@ -42,7 +47,7 @@ pub struct KickSynth {
     static_rng_state: u32,
     free_rng_state: u32,
 
-    // Corrosion (phase-modulated delay) State
+    // Corrosion (Erosion-style phase-modulated delay) State
     corrosion_buf_l: Vec<f32>,
     corrosion_buf_r: Vec<f32>,
     corrosion_write: usize,
@@ -52,6 +57,10 @@ pub struct KickSynth {
     corrosion_bp_r: [f32; 2],
     // Small LCG for corrosion noise generation
     corrosion_rng: u32,
+
+    meter_decay_per_sample: f32,
+    peak_meter_l: Arc<AtomicF32>,
+    peak_meter_r: Arc<AtomicF32>,
 
     // Trigger Logic
     was_trigger_on: bool,
@@ -401,7 +410,7 @@ impl Default for KickSynth {
             envelope_value: 0.0,
             current_phase: EnvelopePhase::Idle,
             phase_timer: 0.0,
-            release_early: false,
+            release_coeff: 0.0,
             pitch_env_timer: 0.0,
 
             tex_env_value: 0.0,
@@ -422,6 +431,10 @@ impl Default for KickSynth {
             corrosion_bp_l: [0.0; 2],
             corrosion_bp_r: [0.0; 2],
             corrosion_rng: 0xDEAD_BEEF,
+
+            meter_decay_per_sample: 1.0,
+            peak_meter_l: Arc::new(AtomicF32::new(0.0)), // 0.0 Linear = Silence
+            peak_meter_r: Arc::new(AtomicF32::new(0.0)),
 
             was_trigger_on: false,
             midi_velocity: 1.0,
@@ -466,10 +479,20 @@ impl Plugin for KickSynth {
         // Resize corrosion delay buffers for the actual sample rate.
         // We need at least (base_delay + max_mod_depth) * sample_rate samples:
         //   2ms base + 1ms max depth = 3ms => sample_rate * 0.003, rounded up with margin.
-        let corrosion_buf_size = ((_buffer_config.sample_rate * 0.004) as usize + 4).next_power_of_two();
+        let corrosion_buf_size =
+            ((_buffer_config.sample_rate * 0.004) as usize + 4).next_power_of_two();
         self.corrosion_buf_l = vec![0.0; corrosion_buf_size];
         self.corrosion_buf_r = vec![0.0; corrosion_buf_size];
         self.corrosion_write = 0;
+
+        let release_db_per_second = 160.0;
+
+        // Calculate the constant for 1 sample of decay
+        // We store this in the struct
+        self.meter_decay_per_sample = f32::powf(
+            10.0,
+            -release_db_per_second / (20.0 * _buffer_config.sample_rate),
+        );
 
         true
     }
@@ -483,10 +506,10 @@ impl Plugin for KickSynth {
         }
         self.envelope_value = 0.0;
         self.current_phase = EnvelopePhase::Idle;
+        self.release_coeff = 0.0;
         self.tex_env_value = 0.0;
         self.tex_env_phase = EnvelopePhase::Idle;
         self.was_trigger_on = false;
-        self.release_early = false;
         self.tex_release_early = false;
         self.active_midi_note = None;
 
@@ -507,6 +530,9 @@ impl Plugin for KickSynth {
     ) -> ProcessStatus {
         let sample_rate = self.sample_rate;
         let mut next_event = _ctx.next_event();
+
+        let mut max_amplitude_in_block_l: f32 = 0.0;
+        let mut max_amplitude_in_block_r: f32 = 0.0;
 
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
             #[cfg(debug_assertions)]
@@ -532,10 +558,8 @@ impl Plugin for KickSynth {
             let trigger_param_val = self.params.trigger.value();
 
             if gui_triggered || (trigger_param_val && !self.was_trigger_on) {
-                nih_log!("Trigger!");
                 self.trigger_note(1.0);
             } else if gui_released && self.was_trigger_on {
-                nih_log!("Release!");
                 self.release_note();
             }
             self.was_trigger_on = trigger_param_val;
@@ -607,46 +631,33 @@ impl Plugin for KickSynth {
                         }
                     }
                     EnvelopePhase::Decay => {
-                        if self.release_early && sustain_lvl > 0.0 {
-                            // Note was released during Attack/Decay, and sustain is active.
-                            // Behave like a release phase now.
-                            let release_samples = (sample_rate * (release_ms / 1000.0)).max(1.0);
-                            let release_step = 1.0 / release_samples;
-                            self.envelope_value -= release_step;
+                        let decay_samples = (sample_rate * (decay_ms / 1000.0)).max(1.0);
+                        let target = sustain_lvl;
+                        self.envelope_value -= (1.0 - target) / decay_samples;
 
-                            if self.envelope_value <= 0.0 {
-                                self.envelope_value = 0.0;
+                        if self.envelope_value <= target {
+                            self.envelope_value = target;
+                            if target <= 0.0 {
                                 self.current_phase = EnvelopePhase::Idle;
-                            }
-                        } else {
-                            // Normal decay phase (note is held, or sustain is 0).
-                            let decay_samples = (sample_rate * (decay_ms / 1000.0)).max(1.0);
-                            let target = sustain_lvl;
-                            self.envelope_value -= (1.0 - target) / decay_samples;
-
-                            if self.envelope_value <= target {
-                                self.envelope_value = target;
-                                if target <= 0.0 {
-                                    self.current_phase = EnvelopePhase::Idle;
-                                } else {
-                                    self.current_phase = EnvelopePhase::Sustain;
-                                    self.phase_timer = 0.0;
-                                }
+                            } else {
+                                self.current_phase = EnvelopePhase::Sustain;
+                                self.phase_timer = 0.0;
                             }
                         }
                     }
                     EnvelopePhase::Sustain => {
                         self.envelope_value = sustain_lvl;
-                        // For a trigger kick, we just decay to 0 if sustain is 0.
-                        // If sustain is > 0, it stays until external release.
                     }
                     EnvelopePhase::Release => {
-                        let release_samples = (sample_rate * (release_ms / 1000.0)).max(1.0);
-                        // We decay from the current envelope value down to 0
-                        let release_step = 1.0 / release_samples;
-                        self.envelope_value -= release_step;
+                        if self.phase_timer == 0.0 {
+                            let release_samples = (sample_rate * (release_ms / 1000.0)).max(1.0);
+                            self.release_coeff = (0.0001f32).powf(1.0 / release_samples);
+                        }
 
-                        if self.envelope_value <= 0.0 {
+                        self.envelope_value *= self.release_coeff;
+                        self.phase_timer += 1.0;
+
+                        if self.envelope_value < 1e-6 {
                             self.envelope_value = 0.0;
                             self.current_phase = EnvelopePhase::Idle;
                         }
@@ -841,33 +852,37 @@ impl Plugin for KickSynth {
                     // Lowered texture volume by 30%
                 }
 
-                let pre_drive = signal + tex_signal;
+                let vel_mult = self.midi_velocity * (127.0 / 100.0);
+                let pre_drive = (signal + tex_signal) * vel_mult;
 
                 let driven_signal = match drive_model {
-                    1 => Self::drive_tape_classic(drive, pre_drive) * 0.866, // -1.25 dB offset
-                    2 => Self::drive_tape_modern(drive, pre_drive) * 1.412,  // +3.0 dB offset
-                    3 => Self::drive_tube_triode(drive, pre_drive) * 0.917,  // -0.75 dB offset
-                    4 => Self::drive_tube_pentode(drive, pre_drive),
-                    5 => Self::drive_saturation_digital(drive, pre_drive) * 0.729, // -2.75 dB offset
-                    _ => Self::drive_tape_classic(drive, pre_drive) * 0.866,
+                    1 => Self::drive_tape_classic(drive, pre_drive) * 0.89125, // -1dB
+                    2 => Self::drive_tape_modern(drive, pre_drive) * 1.412,
+                    3 => Self::drive_tube_triode(drive, pre_drive) * 0.917,
+                    4 => Self::drive_tube_pentode(drive, pre_drive) * 0.79433, // -2dB
+                    5 => {
+                        let scaled_drive = drive * 0.59;
+                        Self::drive_saturation_digital(scaled_drive, pre_drive) * 0.729
+                    }
+                    _ => Self::drive_tape_classic(drive, pre_drive) * 0.89125,
                 };
 
                 // Ensure all distortion types sound clean when gain is 0% using a dry/wet crossfade mapping
                 let drive_wet = drive.sqrt(); // Keep curve musical
                 let driven = pre_drive * (1.0 - drive_wet) + driven_signal * drive_wet;
 
-                // ----- Corrosion (modulated delay) -----
+                // ----- Corrosion (Erosion-style modulated delay) -----
                 // Returns a stereo (L, R) pair; both are the same when amount == 0.
                 let corr_amount = self.params.corrosion_amount.smoothed.next();
                 let (corr_l, corr_r) = if corr_amount > 0.0 {
                     let corr_freq_norm = self.params.corrosion_frequency.smoothed.next();
                     let corr_freq = log_scale(corr_freq_norm, 15.0, 22000.0);
-                    let corr_width  = self.params.corrosion_width.smoothed.next();
-                    let corr_blend  = self.params.corrosion_noise_blend.smoothed.next();
+                    let corr_width = self.params.corrosion_width.smoothed.next();
+                    let corr_blend = self.params.corrosion_noise_blend.smoothed.next();
                     let corr_stereo = self.params.corrosion_stereo.smoothed.next();
 
                     // Constants matching the Ableton 12.4 spec
-                    const BASE_DELAY: f32    = 0.002; // 2 ms
+                    const BASE_DELAY: f32 = 0.002; // 2 ms
                     const MAX_MOD_DEPTH: f32 = 0.001; // 1 ms max fluctuation
 
                     // 1. Sine modulators (stereo phase offset)
@@ -883,44 +898,32 @@ impl Plugin for KickSynth {
                         .corrosion_rng
                         .wrapping_mul(1_664_525)
                         .wrapping_add(1_013_904_223);
-                    let raw_noise_l =
-                        (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
+                    let raw_noise_l = (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
                     self.corrosion_rng = self
                         .corrosion_rng
                         .wrapping_mul(1_664_525)
                         .wrapping_add(1_013_904_223);
-                    let raw_noise_r =
-                        (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
+                    let raw_noise_r = (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
 
-                    // 3. State-Variable Filter (SVF) Bandpass for noise
-                    // `corr_width` (0.0 to 1.0) maps to Q from wide (0.5) to highly resonant (10.0+)
-                    let q = 0.5 + (1.0 - corr_width) * 15.0;
-                    
-                    // Makeup gain to compensate for energy lost at high Q (narrow bandwidth)
-                    let makeup_gain = (q * 0.4).max(1.0);
+                    // 3. Bandpass-filter noise (2nd-order approximation: LP then HP derived
+                    //    from LP; bandwidth controlled by corr_width)
+                    let lp_cutoff = (corr_freq * corr_width.max(0.01)).min(sample_rate * 0.499);
+                    let hp_cutoff = (corr_freq / corr_width.max(0.01).max(1.0)).max(1.0);
+                    let dt = 1.0 / sample_rate;
+                    let lp_a = dt / (1.0 / (std::f32::consts::TAU * lp_cutoff) + dt);
+                    let hp_a = dt / (1.0 / (std::f32::consts::TAU * hp_cutoff) + dt);
 
-                    // SVF Pre-warped frequency
-                    let g = (std::f32::consts::PI * corr_freq / sample_rate).tan();
-                    let k = 1.0 / q;
-                    let a1 = 1.0 / (1.0 + g * (g + k));
-                    let a2 = g * a1;
-                    let a3 = g * a2;
+                    // Left channel BP
+                    self.corrosion_bp_l[0] += lp_a * (raw_noise_l - self.corrosion_bp_l[0]);
+                    let lp_l = self.corrosion_bp_l[0];
+                    self.corrosion_bp_l[1] += hp_a * (lp_l - self.corrosion_bp_l[1]);
+                    let bp_l = lp_l - self.corrosion_bp_l[1]; // bandpass = LP - LP-of-LP
 
-                    // Left channel SVF
-                    let v3_l = raw_noise_l - self.corrosion_bp_l[1];
-                    let v1_l = a1 * self.corrosion_bp_l[0] + a2 * v3_l;
-                    let v2_l = self.corrosion_bp_l[1] + a2 * self.corrosion_bp_l[0] + a3 * v3_l;
-                    self.corrosion_bp_l[0] = 2.0 * v1_l - self.corrosion_bp_l[0];
-                    self.corrosion_bp_l[1] = 2.0 * v2_l - self.corrosion_bp_l[1];
-                    let bp_l = v1_l * makeup_gain;
-
-                    // Right channel SVF
-                    let v3_r = raw_noise_r - self.corrosion_bp_r[1];
-                    let v1_r = a1 * self.corrosion_bp_r[0] + a2 * v3_r;
-                    let v2_r = self.corrosion_bp_r[1] + a2 * self.corrosion_bp_r[0] + a3 * v3_r;
-                    self.corrosion_bp_r[0] = 2.0 * v1_r - self.corrosion_bp_r[0];
-                    self.corrosion_bp_r[1] = 2.0 * v2_r - self.corrosion_bp_r[1];
-                    let bp_r = v1_r * makeup_gain;
+                    // Right channel BP
+                    self.corrosion_bp_r[0] += lp_a * (raw_noise_r - self.corrosion_bp_r[0]);
+                    let lp_r = self.corrosion_bp_r[0];
+                    self.corrosion_bp_r[1] += hp_a * (lp_r - self.corrosion_bp_r[1]);
+                    let bp_r = lp_r - self.corrosion_bp_r[1];
 
                     // 4. Stereo decorrelation for noise (lerp from mono L → uncorrelated R)
                     let noise_l = bp_l;
@@ -931,10 +934,10 @@ impl Plugin for KickSynth {
                     let mod_r = sine_r + corr_blend * (noise_r - sine_r);
 
                     // 6. Convert modulation signal to delay time in samples
-                    let delay_samples_l = (BASE_DELAY + mod_l * corr_amount * MAX_MOD_DEPTH)
-                        .max(0.0) * sample_rate;
-                    let delay_samples_r = (BASE_DELAY + mod_r * corr_amount * MAX_MOD_DEPTH)
-                        .max(0.0) * sample_rate;
+                    let delay_samples_l =
+                        (BASE_DELAY + mod_l * corr_amount * MAX_MOD_DEPTH).max(0.0) * sample_rate;
+                    let delay_samples_r =
+                        (BASE_DELAY + mod_r * corr_amount * MAX_MOD_DEPTH).max(0.0) * sample_rate;
 
                     // 7. Write input to delay buffers
                     let buf_len = self.corrosion_buf_l.len();
@@ -963,6 +966,16 @@ impl Plugin for KickSynth {
                 out_l = corr_l * self.midi_velocity * 0.9;
                 out_r = corr_r * self.midi_velocity * 0.9;
 
+                let abs_l = out_l.abs();
+                if abs_l > max_amplitude_in_block_l {
+                    max_amplitude_in_block_l = abs_l;
+                }
+
+                let abs_r = out_r.abs();
+                if abs_r > max_amplitude_in_block_r {
+                    max_amplitude_in_block_r = abs_r;
+                }
+
                 if self.current_phase != EnvelopePhase::Idle {
                     self.pitch_env_timer += 1.0;
                     self.phase_timer += 1.0;
@@ -975,17 +988,27 @@ impl Plugin for KickSynth {
             }
         }
 
+        update_peak_meters(
+            self.params.editor_state.is_open(),
+            buffer.samples() as f32,
+            self.meter_decay_per_sample,
+            &self.peak_meter_l,
+            &self.peak_meter_r,
+            max_amplitude_in_block_l,
+            max_amplitude_in_block_r,
+        );
+
         ProcessStatus::KeepAlive
     }
 
     fn editor(&mut self, _async_executor: AsyncExecutor<Self>) -> Option<Box<dyn Editor>> {
-        editor::create(self.params.clone(), self.params.editor_state.clone())
+        editor::create(
+            self.params.clone(),
+            self.peak_meter_l.clone(),
+            self.peak_meter_r.clone(),
+            self.params.editor_state.clone(),
+        )
     }
-}
-
-// Helper function to map a 0-1 value to a logarithmic frequency range
-fn log_scale(value: f32, min: f32, max: f32) -> f32 {
-    min * (max / min).powf(value)
 }
 
 impl KickSynth {
@@ -996,7 +1019,6 @@ impl KickSynth {
         self.pitch_env_timer = 0.0;
         self.phase = 0.0; // Start at 0-crossing
         self.envelope_value = 0.0;
-        self.release_early = false;
 
         // Advance RNG state for analog drift so we always get a new pitch offset
         // regardless of whether texture generation is active.
@@ -1016,107 +1038,114 @@ impl KickSynth {
     }
 
     fn release_note(&mut self) {
-        // If attack or decay, we set `release_early` to skip sustain and decay smoothly to 0.
-        // If sustain, we just go to release.
-        if self.current_phase == EnvelopePhase::Attack || self.current_phase == EnvelopePhase::Decay
+        if self.current_phase != EnvelopePhase::Idle && self.current_phase != EnvelopePhase::Release
         {
-            self.release_early = true;
-        } else if self.current_phase == EnvelopePhase::Sustain {
             self.current_phase = EnvelopePhase::Release;
             self.phase_timer = 0.0;
         }
-
-        // The texture envelope is a one-shot and should not be affected by note release.
     }
 
-    // Tape Saturation Type 1: Classic Analog Tape (Warm, Smooth, Symmetrical)
-    // High headroom before soft clipping. Emphasizes 3rd harmonics smoothly.
+    // Tape Saturation Type 1: Classic Analog Tape (Soft Knee)
+    // Models vintage tape machines with smooth, musical saturation and hysteresis-like behavior
     fn drive_tape_classic(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 24.0; // Higher max gain
+        let gain = 1.0 + drive * 12.0;
         let x = signal * gain;
-        
-        // Pade approximant for tanh (very smooth, classic tape curve)
-        let x2 = x * x;
-        let saturated = x * (27.0 + x2) / (27.0 + 9.0 * x2);
-        
-        saturated.clamp(-1.2, 1.2) * 0.9
+
+        // Soft saturation curve with tape-like compression
+        let saturated = if x.abs() < 0.5 {
+            x * (1.0 - 0.15 * x.abs())
+        } else {
+            let sign = x.signum();
+            sign * (0.425 + 0.575 * (1.0 - (-(x.abs() - 0.5) * 3.0).exp()))
+        };
+
+        // Apply gentle high-frequency rolloff simulation
+        saturated * 0.85
     }
 
-    // Tape Saturation Type 2: Modern Auto-Bias Tape (Highly Asymmetrical)
-    // Pushes positive peaks much harder than negative peaks, creating a thick sound.
+    // Tape Saturation Type 2: Modern High-Bias Tape (Asymmetric)
+    // Models modern tape with asymmetric clipping and warmth
     fn drive_tape_modern(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 28.0;
+        let gain = 1.0 + drive * 10.0;
         let x = signal * gain;
 
+        // Asymmetric tape saturation (positive/negative behave differently)
         let saturated = if x >= 0.0 {
-            // Harder saturation on positive half (flattens out)
-            x / (1.0 + x.powf(1.5))
+            // Positive: harder saturation
+            x / (1.0 + x.abs().powf(1.4))
         } else {
-            // Softer curve on negative half (bulges out)
-            let abs_x = x.abs();
-            -(abs_x / (1.0 + abs_x.powf(0.8)))
+            // Negative: softer saturation
+            x / (1.0 + (x.abs() * 0.85).powf(1.2))
         };
 
-        saturated.clamp(-1.5, 1.5) * 0.8
+        saturated * 0.9
     }
 
-    // Tube Saturation Type 1: Triode Tube (Strong Even Harmonics)
-    // Shifts the transfer function off-center to generate heavy 2nd order harmonics.
+    // Tube Saturation Type 1: Triode Tube (Warm, Musical)
+    // Models classic triode tube stages with even/odd harmonics
     fn drive_tube_triode(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 30.0;
+        let gain = 1.0 + drive * 15.0;
         let x = signal * gain;
 
-        // Asymmetric waveshaping: x + a*x^2
-        // We blend the x^2 term based on drive to increase even harmonics
-        let asymmetry = 0.3 * drive;
-        let shaped = x + asymmetry * x * x;
-
-        // Soft clip the shaped signal
-        let saturated = shaped / (1.0 + shaped.abs());
-        
-        // DC offset removal (approximate)
-        let dc_fix = saturated - (asymmetry * 0.5);
-        dc_fix.clamp(-1.0, 1.0)
-    }
-
-    // Tube Saturation Type 2: Pentode/Power Tube (Aggressive, Odd Harmonics)
-    // Harder clipping with a "bite" at the crossover, simulating power amp sag.
-    fn drive_tube_pentode(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 35.0;
-        let x = signal * gain;
-
-        // Cross-over distortion + hard symmetric clipping
-        let sign = x.signum();
-        let abs_x = x.abs();
-        
-        // Deadzone / sag at 0
-        let sagged = if abs_x < 0.05 {
-            abs_x * 0.5
+        // Triode-style transfer curve with crossover distortion
+        let saturated = if x.abs() < 0.1 {
+            x * 0.95 // Slight deadzone for tube character
         } else {
-            abs_x - 0.025
+            // Soft tube saturation using tanh for guaranteed bounding
+            let sign = x.signum();
+            let abs_x = x.abs();
+            let mapped = (abs_x - 0.1) * 1.5;
+            sign * (0.095 + mapped.tanh() * 0.905)
         };
 
-        // Aggressive tanh-like curve
-        let saturated = sign * (1.0 - (-sagged * 2.5).exp());
-        saturated
+        // Output scaling with tube warmth
+        saturated * 0.75
     }
 
-    // Digital Saturation: Sine Wavefolder
-    // When driven hard, the signal folds back down instead of clipping (aliasing/FM tone)
-    fn drive_saturation_digital(drive: f32, signal: f32) -> f32 {
-        let gain = 1.0 + drive * 40.0;
+    // Tube Saturation Type 2: Pentode/Power Tube (Aggressive)
+    // Models power tube stages with harder clipping and compression
+    fn drive_tube_pentode(drive: f32, signal: f32) -> f32 {
+        let gain = 1.0 + drive * 18.0;
         let x = signal * gain;
 
-        // Wavefolding using Sine
-        // At low drive, sin(x) acts like soft saturation.
-        // At high drive, x exceeds pi/2 and folds back, creating wild harmonics.
-        let folded = (x * std::f32::consts::FRAC_PI_2).sin();
+        // Power tube saturation with grid clipping simulation
+        let saturated = if x.abs() < 0.3 {
+            x
+        } else {
+            // Bounded hard limit transition using atan for stability
+            let sign = x.signum();
+            let abs_x = x.abs();
+            let mapped = (abs_x - 0.3) * 2.0;
+            sign * (0.3 + mapped.atan() * (0.7 / std::f32::consts::FRAC_PI_2))
+        };
 
-        // Blend between hard clipper and wavefolder to keep it somewhat musical
-        let hard_clip = x.clamp(-1.0, 1.0);
-        
-        // As drive increases, we let more of the folded signal through
-        folded * drive + hard_clip * (1.0 - drive)
+        saturated * 0.7
+    }
+
+    // Digital Saturation: Modern Clipper with Oversampling Simulation
+    // Clean, transparent saturation with minimal aliasing artifacts
+    fn drive_saturation_digital(drive: f32, signal: f32) -> f32 {
+        let gain = 1.0 + drive * 20.0;
+        let x = signal * gain;
+
+        // Quintic polynomial approximation (C2 continuous)
+        let saturated = if x.abs() <= 1.0 {
+            x * (1.5 - 0.5 * x.abs().powf(2.0))
+        } else {
+            x.signum()
+        };
+
+        // Apply soft knee at threshold
+        let threshold = 0.8;
+        let final_signal = if saturated.abs() > threshold {
+            let sign = saturated.signum();
+            let over = saturated.abs() - threshold;
+            sign * (threshold + over / (1.0 + over * 3.0))
+        } else {
+            saturated
+        };
+
+        final_signal * 0.8
     }
 
     /// Fractional delay buffer reader using linear interpolation.
@@ -1125,18 +1154,60 @@ impl KickSynth {
     fn corrosion_read(buf: &[f32], write_pos: usize, delay_samples: f32) -> f32 {
         let len = buf.len();
         let delay_i = delay_samples as usize;
-        let frac    = delay_samples - delay_i as f32;
+        let frac = delay_samples - delay_i as f32;
 
         // Clamp so we never exceed the buffer length
         let delay_i = delay_i.min(len - 1);
 
         // Read head (going backward from the write position)
-        let idx0 = (write_pos + len - delay_i)     % len;
+        let idx0 = (write_pos + len - delay_i) % len;
         let idx1 = (write_pos + len - delay_i - 1) % len;
 
         // Linear interpolation between the two adjacent samples
         buf[idx0] + frac * (buf[idx1] - buf[idx0])
     }
+}
+
+
+#[inline]
+fn update_peak_meters(
+    editor_open: bool,
+    buffer_samples: f32,
+    meter_decay_per_sample: f32,
+    peak_meter_l: &Arc<AtomicF32>,
+    peak_meter_r: &Arc<AtomicF32>,
+    max_amplitude_l: f32,
+    max_amplitude_r: f32,
+) {
+    if !editor_open {
+        return;
+    }
+
+    let block_decay = f32::powf(meter_decay_per_sample, buffer_samples);
+
+    // Update left meter
+    let current_peak_l = peak_meter_l.load(Ordering::Relaxed);
+    let mut new_peak_l = if max_amplitude_l > current_peak_l {
+        max_amplitude_l
+    } else {
+        current_peak_l * block_decay
+    };
+    if new_peak_l < 0.001 {
+        new_peak_l = 0.0;
+    }
+    peak_meter_l.store(new_peak_l, Ordering::Relaxed);
+
+    // Update right meter
+    let current_peak_r = peak_meter_r.load(Ordering::Relaxed);
+    let mut new_peak_r = if max_amplitude_r > current_peak_r {
+        max_amplitude_r
+    } else {
+        current_peak_r * block_decay
+    };
+    if new_peak_r < 0.001 {
+        new_peak_r = 0.0;
+    }
+    peak_meter_r.store(new_peak_r, Ordering::Relaxed);
 }
 
 impl Vst3Plugin for KickSynth {

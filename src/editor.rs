@@ -8,10 +8,12 @@ use nih_plug_vizia::{create_vizia_editor, ViziaState, ViziaTheming};
 use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
+use crate::editor::my_peak_meter::MyPeakMeter;
 use crate::KickParams;
 
 mod param_knob;
 mod single_knob;
+mod my_peak_meter;
 
 pub const ORBITRON_TTF: &[u8] = include_bytes!("resource/fonts/Orbitron-Regular.ttf");
 pub const COMFORTAA_LIGHT_TTF: &[u8] = include_bytes!("resource/fonts/Comfortaa-Light.ttf");
@@ -27,6 +29,8 @@ use self::param_knob::ParamKnob;
 #[derive(Lens)]
 struct Data {
     params: Arc<KickParams>,
+    peak_meter_l: Arc<AtomicF32>,
+    peak_meter_r: Arc<AtomicF32>,
 }
 
 impl Model for Data {}
@@ -37,6 +41,8 @@ pub(crate) fn default_state() -> Arc<ViziaState> {
 
 pub(crate) fn create(
     params: Arc<KickParams>,
+    peak_meter_l: Arc<AtomicF32>,
+    peak_meter_r: Arc<AtomicF32>,
     editor_state: Arc<ViziaState>,
 ) -> Option<Box<dyn Editor>> {
     create_vizia_editor(editor_state, ViziaTheming::Custom, move |cx, _| {
@@ -72,6 +78,8 @@ pub(crate) fn create(
 
         Data {
             params: params.clone(),
+            peak_meter_l: peak_meter_l.clone(),
+            peak_meter_r: peak_meter_r.clone(),
         }
         .build(cx);
 
@@ -191,23 +199,57 @@ pub(crate) fn create(
                 .right(Stretch(0.05))
                 .class("finetune-section-inner");
 
-            // Trigger Button
-            create_text_button(
-                cx,
-                "TRIGGER",
-                Data::params.map(|p| p.trigger.value()),
-                &params,
-                |p| &p.trigger,
-                "distortion-param-button",
-                "active",
-            )
-            .left(Stretch(1.0))
-            .right(Stretch(1.0))
-            .top(Stretch(0.05))
-            .bottom(Stretch(0.05))
-            .width(Pixels(250.0))
-            .height(Pixels(60.0))
-            .child_space(Stretch(1.0)); // Center text horizontally and vertically
+            HStack::new(cx, |cx| {
+                MyPeakMeter::new(
+                    cx,
+                    Data::peak_meter_l.map(|peak_meter_l| {
+                        util::gain_to_db(peak_meter_l.load(Ordering::Relaxed))
+                    }),
+                    Some(Duration::from_millis(30)),
+                    true
+                )
+                    .class("vu-meter-no-text")
+                    .top(Stretch(0.05))
+                    .bottom(Stretch(0.05))
+                    .width(Stretch(1.0))
+                    .height(Pixels(40.0));
+
+                // Trigger Button
+                create_text_button(
+                    cx,
+                    "TRIGGER",
+                    Data::params.map(|p| p.trigger.value()),
+                    &params,
+                    |p| &p.trigger,
+                    "distortion-param-button",
+                    "active",
+                )
+                    .left(Stretch(0.1))
+                    .right(Stretch(0.1))
+                    .top(Stretch(0.05))
+                    .bottom(Stretch(0.05))
+                    .width(Stretch(1.0))
+                    .height(Pixels(60.0))
+                    .child_space(Stretch(1.0)); // Center text horizontally and vertically
+
+
+                MyPeakMeter::new(
+                    cx,
+                    Data::peak_meter_r.map(|peak_meter_r| {
+                        util::gain_to_db(peak_meter_r.load(Ordering::Relaxed))
+                    }),
+                    Some(Duration::from_millis(30)),
+                    false
+                )
+                    .class("vu-meter-no-text")
+                    .top(Stretch(0.05))
+                    .bottom(Stretch(0.05))
+                    .width(Stretch(1.0))
+                    .height(Pixels(40.0));
+            })
+                .child_space(Stretch(1.0))
+                .width(Stretch(1.0))
+                .height(Stretch(0.7));
         })
         .class("main-gui");
         ResizeHandle::new(cx);

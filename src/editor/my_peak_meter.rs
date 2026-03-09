@@ -16,9 +16,6 @@ const TICK_GAP: f32 = 1.0;
 const MIN_TICK: f32 = -90.0;
 /// The decibel value corresponding to the very right of the bar.
 const MAX_TICK: f32 = 20.0;
-/// The ticks that will be shown beneath the peak meter's bar. The first value is shown as
-/// -infinity, and at the last position we'll draw the `dBFS` string.
-const TEXT_TICKS: [i32; 6] = [-80, -60, -40, -20, 0, 12];
 
 /// A simple horizontal peak meter.
 ///
@@ -34,12 +31,13 @@ where
 {
     level_dbfs: L,
     peak_dbfs: P,
+    flip_horizontal: bool,
 }
 
 impl MyPeakMeter {
     /// Creates a new [`MyPeakMeter`] for the given value in decibel, optionally holding the peak
     /// value for a certain amount of time.
-    pub fn new<L>(cx: &mut Context, level_dbfs: L, hold_time: Option<Duration>) -> Handle<'_, Self>
+    pub fn new<L>(cx: &mut Context, level_dbfs: L, hold_time: Option<Duration>, flip_horizontal: bool) -> Handle<'_, Self>
     where
         L: Lens<Target = f32>,
     {
@@ -74,62 +72,11 @@ impl MyPeakMeter {
             MyPeakMeterBar {
                 level_dbfs,
                 peak_dbfs,
+                flip_horizontal,
             }
                 .build(cx, |_| {})
                 .class("bar");
-
-            ZStack::new(cx, |cx| {
-                const WIDTH_PCT: f32 = 50.0;
-                for tick_db in TEXT_TICKS {
-                    let tick_fraction = (tick_db as f32 - MIN_TICK) / (MAX_TICK - MIN_TICK);
-                    let tick_pct = tick_fraction * 100.0;
-                    // We'll shift negative numbers slightly to the left so they look more centered
-                    let needs_minus_offset = tick_db < 0;
-
-                    ZStack::new(cx, |cx| {
-                        let first_tick = tick_db == TEXT_TICKS[0];
-                        let last_tick = tick_db == TEXT_TICKS[TEXT_TICKS.len() - 1];
-
-                        if !last_tick {
-                            // FIXME: This is not aligned to the pixel grid and some ticks will look
-                            //        blurry, is there a way to fix this?
-                            Element::new(cx).class("ticks__tick");
-                        }
-
-                        let font_size = {
-                            let event_cx = EventContext::new(cx);
-                            event_cx.font_size() * event_cx.scale_factor()
-                        };
-                        let label = if first_tick {
-                            Label::new(cx, "-inf")
-                                .class("ticks__label")
-                                .class("ticks__label--inf")
-                        } else if last_tick {
-                            // This is only inclued in the array to make positioning this easier
-                            Label::new(cx, "dBFS")
-                                .class("ticks__label")
-                                .class("ticks__label--dbfs")
-                        } else {
-                            Label::new(cx, &tick_db.to_string()).class("ticks__label")
-                        }
-                            .overflow(Overflow::Visible);
-
-                        if needs_minus_offset {
-                            label.child_right(Pixels(font_size * 0.15));
-                        }
-                    })
-                        .height(Stretch(1.0))
-                        .left(Percentage(tick_pct - (WIDTH_PCT / 2.0)))
-                        .width(Percentage(WIDTH_PCT))
-                        .child_left(Stretch(1.0))
-                        .child_right(Stretch(1.0))
-                        .overflow(Overflow::Visible);
-                }
-            })
-                .class("ticks")
-                .overflow(Overflow::Visible);
         })
-            .overflow(Overflow::Visible)
     }
 }
 
@@ -197,20 +144,28 @@ where
         for tick_x in bar_tick_coordinates {
             let tick_fraction =
                 (tick_x - bar_ticks_start_x) as f32 / (bar_ticks_end_x - bar_ticks_start_x) as f32;
-            let tick_db = (tick_fraction * (MAX_TICK - MIN_TICK)) + MIN_TICK;
+
+            let display_fraction = if self.flip_horizontal { 1.0 - tick_fraction } else { tick_fraction };
+            let tick_db = (display_fraction * (MAX_TICK - MIN_TICK)) + MIN_TICK;
+
             if tick_db > level_dbfs {
-                break;
+                if self.flip_horizontal {
+                    continue;
+                } else {
+                    break;
+                }
             }
 
             // femtovg draws paths centered on these coordinates, so in order to be pixel perfect we
             // need to account for that. Otherwise the ticks will be 2px wide instead of 1px.
             let mut path = vg::Path::new();
-            path.move_to(tick_x as f32 + (dpi_scale / 2.0), bar_bounds.top());
+            path.move_to(tick_x as f32 + (dpi_scale / 0.4), bar_bounds.top());
             path.line_to(tick_x as f32 + (dpi_scale / 2.0), bar_bounds.bottom());
 
 
-            let start = Color::rgba(25,25,38,100);
-            let end = Color::rgba(255,178,0,100);
+            let start = Color::rgba(27,16,32,100);
+            // this is the end color of the peak meter
+            let end = Color::rgba(100,73,113,100);
 
             // 1. Convert u8 to f32 and normalize to 0.0...1.0 range
             let start_r = start.r() as f32 / 255.0;
@@ -222,9 +177,9 @@ where
             let end_b = end.b() as f32 / 255.0;
 
             // 2. Now you can safely multiply by the f32 tick_fraction
-            let r = start_r + (end_r - start_r) * tick_fraction;
-            let g = start_g + (end_g - start_g) * tick_fraction;
-            let b = start_b + (end_b - start_b) * tick_fraction;
+            let r = start_r + (end_r - start_r) * display_fraction;
+            let g = start_g + (end_g - start_g) * display_fraction;
+            let b = start_b + (end_b - start_b) * display_fraction;
 
             // 3. Create the paint (rgbaf expects 0.0 to 1.0)
             let mut paint = vg::Paint::color(vg::Color::rgbaf(r, g, b, opacity));
@@ -235,9 +190,14 @@ where
 
         // Draw the hold peak value if the hold time option has been set
         let db_to_x_coord = |db: f32| {
-            let tick_fraction = (db - MIN_TICK) / (MAX_TICK - MIN_TICK);
-            bar_ticks_start_x as f32
-                + ((bar_ticks_end_x - bar_ticks_start_x) as f32 * tick_fraction).round()
+            let tick_fraction = ((db - MIN_TICK) / (MAX_TICK - MIN_TICK)).clamp(0.0, 1.0);
+            let x_offset = (bar_ticks_end_x - bar_ticks_start_x) as f32 * tick_fraction;
+
+            if self.flip_horizontal {
+                (bar_ticks_end_x as f32 - x_offset).round()
+            } else {
+                (bar_ticks_start_x as f32 + x_offset).round()
+            }
         };
         if (MIN_TICK..MAX_TICK).contains(&peak_dbfs) {
             // femtovg draws paths centered on these coordinates, so in order to be pixel perfect we
@@ -247,7 +207,8 @@ where
             path.move_to(peak_x + (dpi_scale / 2.0), bar_bounds.top());
             path.line_to(peak_x + (dpi_scale / 2.0), bar_bounds.bottom());
 
-            let mut paint = vg::Paint::color(vg::Color::rgbaf(0.3, 0.3, 0.3, opacity));
+            // this is peak visualization color of the peak meter
+            let mut paint = vg::Paint::color(vg::Color::rgbaf(0.4, 0.2, 0.4, opacity));
             paint.set_line_width(TICK_WIDTH * dpi_scale);
             canvas.stroke_path(&path, &paint);
         }
