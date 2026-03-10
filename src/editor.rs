@@ -232,7 +232,6 @@ pub(crate) fn create(
                     .height(Pixels(60.0))
                     .child_space(Stretch(1.0)); // Center text horizontally and vertically
 
-
                 MyPeakMeter::new(
                     cx,
                     Data::peak_meter_r.map(|peak_meter_r| {
