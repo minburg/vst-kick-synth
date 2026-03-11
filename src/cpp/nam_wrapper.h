@@ -14,6 +14,9 @@ public:
     /// Load a .nam file. This involves allocations and should NOT be called on the audio thread!
     void load_model(const std::string& model_path);
 
+    /// Load model from its string content (JSON). Not real-time safe.
+    void load_model_content(const std::string& content);
+
     /// Process a block of audio. Safe to call on the audio thread.
     void process_block(const float* input, float* output, int num_frames);
 

@@ -193,6 +193,24 @@ pub(crate) fn create(
 
                 SingleKnob::new(cx, Data::params, |params| &params.release, false)
                     .width(Stretch(1.0));
+            })
+            .width(Stretch(1.0))
+            .left(Stretch(0.05))
+            .right(Stretch(0.05))
+            .class("finetune-section-inner");
+
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |params| &params.nam_model, false)
+                    .width(Stretch(1.0));
+
+                VStack::new(cx, |cx| {
+                    Label::new(cx, Data::params.map(|p| p.nam_status_text.read().clone()))
+                        .class("nam-status-label")
+                        .toggle_class("success", Data::params.map(|p| p.nam_is_loaded.load(Ordering::Relaxed)))
+                        .toggle_class("error", Data::params.map(|p| !p.nam_is_loaded.load(Ordering::Relaxed)));
+                })
+                .width(Stretch(1.0))
+                .child_space(Stretch(1.0));
 
                 SingleKnob::new(cx, Data::params, |params| &params.nam_input_gain, false)
                     .width(Stretch(1.0));
@@ -270,7 +288,7 @@ fn create_text_button<'a, L, F>(
     selector: F,
     class: &str,
     toggle_class: &str,
-) -> Handle<'a, DebugWrapper>
+) -> Handle<'a, VStack>
 where
     L: Lens<Target = bool> + Copy + 'static + Send + Sync,
     F: 'static + Clone + Fn(&KickParams) -> &BoolParam + Send + Sync,
@@ -281,7 +299,10 @@ where
     let params_arc_down = params_arc.clone();
     let selector_down = selector.clone();
 
-    DebugWrapper::new(cx, label_text, move |cx| {
+    let params_arc_up = params_arc.clone();
+    let selector_up = selector.clone();
+
+    VStack::new(cx, |cx| {
         Label::new(cx, label_text).hoverable(false);
     })
     .class(class)
@@ -291,140 +312,47 @@ where
         cx.focus();
         cx.set_active(true);
 
-        params_arc_down.gui_trigger.store(true, Ordering::SeqCst);
+        params_arc_down.gui_trigger.fetch_add(1, Ordering::SeqCst);
 
         let param = selector_down(&params_arc_down);
         let ptr = param.as_ptr();
         let param_static: &'static BoolParam = unsafe { std::mem::transmute(param) };
 
-        // --- PHASE 1: OPEN THE GESTURE & PERFORM (set to 1.0) ---
+        // Visual feedback only - set param to 1.0
         cx.emit(ParamEvent::BeginSetParameter(param_static));
         cx.emit(RawParamEvent::BeginSetParameter(ptr));
         cx.emit(ParamEvent::SetParameterNormalized(param_static, 1.0));
         cx.emit(RawParamEvent::SetParameterNormalized(ptr, 1.0));
-
-        // --- PHASE 2: START THE TIMER TO CLOSE THE GESTURE for the initial press ---
-        let gesture_duration = std::time::Duration::from_millis(20);
-        cx.add_timer(
-            gesture_duration,
-            Some(gesture_duration),
-            move |cx, action| {
-                if let TimerAction::Stop = action {
-                    cx.emit(ParamEvent::EndSetParameter(param_static));
-                    cx.emit(RawParamEvent::EndSetParameter(ptr));
-                }
-            },
-        );
-
-        // --- Reset param back to 0.0 after a delay ---
-        let reset_delay = std::time::Duration::from_millis(50);
-        cx.add_timer(reset_delay, None, move |cx, _| {
-            cx.emit(ParamEvent::BeginSetParameter(param_static));
-            cx.emit(RawParamEvent::BeginSetParameter(ptr));
-            cx.emit(ParamEvent::SetParameterNormalized(param_static, 0.0));
-            cx.emit(RawParamEvent::SetParameterNormalized(ptr, 0.0));
-            cx.emit(ParamEvent::EndSetParameter(param_static));
-            cx.emit(RawParamEvent::EndSetParameter(ptr));
-        });
+        cx.emit(ParamEvent::EndSetParameter(param_static));
+        cx.emit(RawParamEvent::EndSetParameter(ptr));
+    })
+    .on_double_click(move |cx, _btn| {
+        // Capture the second half of a double-click as a trigger
+        let params = params_arc.clone();
+        params.gui_trigger.fetch_add(1, Ordering::SeqCst);
+        
+        let param = selector(&params);
+        let ptr = param.as_ptr();
+        let param_static: &'static BoolParam = unsafe { std::mem::transmute(param) };
+        
+        cx.emit(ParamEvent::SetParameterNormalized(param_static, 1.0));
+        cx.emit(RawParamEvent::SetParameterNormalized(ptr, 1.0));
     })
     .on_mouse_up(move |cx, _btn| {
-        cx.focus();
-        cx.set_active(true);
+        cx.set_active(false);
 
-        params_arc.gui_release.store(true, Ordering::SeqCst);
+        params_arc_up.gui_release.fetch_add(1, Ordering::SeqCst);
 
-        let param = selector(&params_arc);
+        let param = selector_up(&params_arc_up);
         let ptr = param.as_ptr();
         let param_static: &'static BoolParam = unsafe { std::mem::transmute(param) };
 
-        // --- PHASE 1: OPEN THE GESTURE & PERFORM (set to 1.0) ---
+        // Visual feedback only - set param back to 0.0
         cx.emit(ParamEvent::BeginSetParameter(param_static));
         cx.emit(RawParamEvent::BeginSetParameter(ptr));
-        cx.emit(ParamEvent::SetParameterNormalized(param_static, 1.0));
-        cx.emit(RawParamEvent::SetParameterNormalized(ptr, 1.0));
-
-        // --- PHASE 2: START THE TIMER TO CLOSE THE GESTURE for the initial press ---
-        let gesture_duration = std::time::Duration::from_millis(20);
-        cx.add_timer(
-            gesture_duration,
-            Some(gesture_duration),
-            move |cx, action| {
-                if let TimerAction::Stop = action {
-                    cx.emit(ParamEvent::EndSetParameter(param_static));
-                    cx.emit(RawParamEvent::EndSetParameter(ptr));
-                }
-            },
-        );
-
-        // --- Reset param back to 0.0 after a delay ---
-        let reset_delay = std::time::Duration::from_millis(50);
-        cx.add_timer(reset_delay, None, move |cx, _| {
-            cx.emit(ParamEvent::BeginSetParameter(param_static));
-            cx.emit(RawParamEvent::BeginSetParameter(ptr));
-            cx.emit(ParamEvent::SetParameterNormalized(param_static, 0.0));
-            cx.emit(RawParamEvent::SetParameterNormalized(ptr, 0.0));
-            cx.emit(ParamEvent::EndSetParameter(param_static));
-            cx.emit(RawParamEvent::EndSetParameter(ptr));
-        });
+        cx.emit(ParamEvent::SetParameterNormalized(param_static, 0.0));
+        cx.emit(RawParamEvent::SetParameterNormalized(ptr, 0.0));
+        cx.emit(ParamEvent::EndSetParameter(param_static));
+        cx.emit(RawParamEvent::EndSetParameter(ptr));
     })
-}
-
-pub struct DebugWrapper {
-    name: String,
-}
-
-impl DebugWrapper {
-    // FIX: Added lifetime 'a to tie the Handle to the Context
-    pub fn new<'a, F>(cx: &'a mut Context, name: &str, content: F) -> Handle<'a, Self>
-    where
-        F: FnOnce(&mut Context),
-    {
-        Self {
-            name: name.to_string(),
-        }
-        .build(cx, |cx| {
-            (content)(cx);
-        })
-    }
-}
-
-impl View for DebugWrapper {
-    fn element(&self) -> Option<&'static str> {
-        Some("debug-wrapper")
-    }
-
-    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
-        event.map(|window_event, _| match window_event {
-            WindowEvent::MouseEnter => {
-                nih_log!("[{}] Mouse ENTER. Bounds: {:?}", self.name, cx.bounds());
-            }
-            WindowEvent::MouseLeave => {
-                nih_log!("[{}] Mouse LEAVE", self.name);
-            }
-            WindowEvent::MouseDown(btn) => {
-                let mouse = cx.mouse();
-                nih_log!(
-                    "[{}] Mouse DOWN ({:?}). \n\t-> Mouse Pos: ({}, {})\n\t-> Btn Bounds: ({}, {}, {}, {})",
-                    self.name,
-                    btn,
-                    mouse.cursorx,
-                    mouse.cursory,
-                    cx.bounds().x,
-                    cx.bounds().y,
-                    cx.bounds().w,
-                    cx.bounds().h
-                );
-            }
-            WindowEvent::MouseUp(btn) => {
-                nih_log!("[{}] Mouse UP ({:?})", self.name, btn);
-            }
-            WindowEvent::FocusIn => {
-                nih_log!("[{}] Focus GAINED", self.name);
-            }
-            WindowEvent::FocusOut => {
-                nih_log!("[{}] Focus LOST", self.name);
-            }
-            _ => {}
-        });
-    }
 }

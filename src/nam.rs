@@ -9,7 +9,10 @@ mod ffi {
         fn new_nam_wrapper(sample_rate: f32, max_block_size: i32) -> UniquePtr<NamProcessWrapper>;
 
         // Load a model from a string path
-        fn load_model(self: Pin<&mut NamProcessWrapper>, model_path: &CxxString);
+        fn load_model(self: Pin<&mut NamProcessWrapper>, model_path: &CxxString) -> Result<()>;
+
+        // Load model from memory
+        fn load_model_content(self: Pin<&mut NamProcessWrapper>, content: &CxxString) -> Result<()>;
 
         // Process a block
         // Note: we'll have to deal with pointers safely in Rust
@@ -39,11 +42,20 @@ impl NamSynth {
         }
     }
 
-    pub fn load_model(&mut self, path: &str) {
+    pub fn load_model(&mut self, path: &str) -> anyhow::Result<()> {
         cxx::let_cxx_string!(cxx_path = path);
         if !self.inner.is_null() {
-            self.inner.pin_mut().load_model(&cxx_path);
+            self.inner.pin_mut().load_model(&cxx_path)?;
         }
+        Ok(())
+    }
+
+    pub fn load_model_content(&mut self, content: &str) -> anyhow::Result<()> {
+        cxx::let_cxx_string!(cxx_content = content);
+        if !self.inner.is_null() {
+            self.inner.pin_mut().load_model_content(&cxx_content)?;
+        }
+        Ok(())
     }
 
     pub fn update_settings(&mut self, sample_rate: f32, max_block_size: i32) {

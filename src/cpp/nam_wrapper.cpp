@@ -45,6 +45,22 @@ void NamProcessWrapper::load_model(const std::string& model_path) {
     } catch (const std::exception& e) {
         std::cerr << "Failed to load NAM model: " << e.what() << "\n";
         m_nam = nullptr;
+        throw; // Re-throw to inform caller if possible
+    }
+}
+
+void NamProcessWrapper::load_model_content(const std::string& content) {
+    try {
+        nlohmann::json j = nlohmann::json::parse(content);
+        m_nam = nam::get_dsp(j);
+        
+        if (m_nam != nullptr) {
+            m_nam->ResetAndPrewarm((double)m_sample_rate, m_max_block_size);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "Failed to load NAM model from content: " << e.what() << "\n";
+        m_nam = nullptr;
+        throw;
     }
 }
 

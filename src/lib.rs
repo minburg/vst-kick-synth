@@ -15,6 +15,10 @@ use parking_lot::RwLock;
 mod editor;
 mod nam;
 
+const NAM_MODEL_PHILIPS: &str = include_str!("resource/nam/Philips_EL3541D.nam");
+const NAM_MODEL_CULTURE_VULTURE: &str = include_str!("resource/nam/Culture_Vulture_HIGH_OD_Bias 3_Drive_14_PK5.nam");
+const NAM_MODEL_JH24: &str = include_str!("resource/nam/TAPE_OUT_JH24_30-450_L.nam");
+
 
 // Helper function to map a 0-1 value to a logarithmic frequency range
 fn log_scale(value: f32, min: f32, max: f32) -> f32 {
@@ -101,7 +105,7 @@ pub struct KickSynth {
     active_midi_note: Option<u8>,
 
     nam_synth: nam::NamSynth,
-    current_nam_path: String,
+    current_nam_model: Option<NamModel>,
 
     mono_buffer: Vec<f32>,
     nam_output_buffer: Vec<f32>,
@@ -114,6 +118,16 @@ enum EnvelopePhase {
     Decay,
     Sustain,
     Release,
+}
+
+#[derive(PartialEq, Eq, Clone, Copy, Enum)]
+pub enum NamModel {
+    #[name = "Philips EL3541D"]
+    PhilipsEL3541D,
+    #[name = "CultureVulture"]
+    CultureVulture,
+    #[name = "JH24"]
+    JH24,
 }
 
 #[derive(Params)]
@@ -200,9 +214,9 @@ struct KickParams {
     pub trigger: BoolParam,
 
     /// Trigger Logic for the UI (consumed by audio thread)
-    pub gui_trigger: AtomicBool,
+    pub gui_trigger: std::sync::atomic::AtomicU32,
     /// Release Logic for the UI (consumed by audio thread)
-    pub gui_release: AtomicBool,
+    pub gui_release: std::sync::atomic::AtomicU32,
 
     #[id = "nam_input_gain"]
     pub nam_input_gain: FloatParam,
@@ -210,8 +224,11 @@ struct KickParams {
     #[id = "nam_output_gain"]
     pub nam_output_gain: FloatParam,
 
-    #[persist = "nam_model_path"]
-    pub nam_model_path: Arc<RwLock<String>>,
+    #[id = "nam_model"]
+    pub nam_model: EnumParam<NamModel>,
+
+    pub nam_is_loaded: AtomicBool,
+    pub nam_status_text: Arc<RwLock<String>>,
 }
 
 impl Default for KickParams {
@@ -219,8 +236,8 @@ impl Default for KickParams {
         Self {
             editor_state: editor::default_state(),
 
-            gui_trigger: AtomicBool::new(false),
-            gui_release: AtomicBool::new(false),
+            gui_trigger: std::sync::atomic::AtomicU32::new(0),
+            gui_release: std::sync::atomic::AtomicU32::new(0),
 
             tune: FloatParam::new(
                 "Tune",
@@ -415,7 +432,9 @@ impl Default for KickParams {
             .with_unit("dB")
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
 
-            nam_model_path: Arc::new(RwLock::new(String::from("src/resource/nam/Philips_EL3541D.nam"))),
+            nam_model: EnumParam::new("NAM Model", NamModel::PhilipsEL3541D),
+            nam_is_loaded: AtomicBool::new(false),
+            nam_status_text: Arc::new(RwLock::new(String::from("No model loaded"))),
         }
     }
 }
@@ -495,7 +514,7 @@ impl Default for KickSynth {
             active_midi_note: None,
 
             nam_synth: nam::NamSynth::new(44100.0, 2048),
-            current_nam_path: String::new(),
+            current_nam_model: None,
 
             mono_buffer: Vec::with_capacity(2048),
             nam_output_buffer: Vec::with_capacity(2048),
@@ -612,21 +631,65 @@ impl Plugin for KickSynth {
         let mut max_amplitude_in_block_l: f32 = 0.0;
         let mut max_amplitude_in_block_r: f32 = 0.0;
 
-        // 0. Check for model path updates
-        let model_path = self.params.nam_model_path.read().clone();
-        if model_path != self.current_nam_path {
-            self.nam_synth.load_model(&model_path);
-            self.current_nam_path = model_path;
+        // 0. Update NAM model if changed
+        let selected_model = self.params.nam_model.value();
+        if self.current_nam_model != Some(selected_model) {
+            let content = match selected_model {
+                NamModel::PhilipsEL3541D => NAM_MODEL_PHILIPS,
+                NamModel::CultureVulture => NAM_MODEL_CULTURE_VULTURE,
+                NamModel::JH24 => NAM_MODEL_JH24,
+            };
+
+            match self.nam_synth.load_model_content(content) {
+                Ok(_) => {
+                    self.params.nam_is_loaded.store(true, Ordering::SeqCst);
+                    if let Some(mut text) = self.params.nam_status_text.try_write() {
+                         *text = String::from("NAM Loaded");
+                    }
+                    self.current_nam_model = Some(selected_model);
+                }
+                Err(e) => {
+                    self.params.nam_is_loaded.store(false, Ordering::SeqCst);
+                    if let Some(mut text) = self.params.nam_status_text.try_write() {
+                         *text = format!("Error: {}", e);
+                    }
+                    nih_log!("Failed to load NAM model: {}", e);
+                    self.current_nam_model = Some(selected_model);
+                }
+            }
         }
 
-        // 1. Generate mono synth signal for the Block
+        // 1. Handle UI/Parameter Triggers (Block Rate)
+        let trigger_count = self.params.gui_trigger.swap(0, Ordering::SeqCst);
+        let release_count = self.params.gui_release.swap(0, Ordering::SeqCst);
+        let trigger_param_val = self.params.trigger.value();
+
+        // If we have UI triggers, process them
+        if trigger_count > 0 {
+            self.trigger_note(1.0);
+        }
+        
+        // Only release if we didn't just trigger in this exact block, 
+        // OR if we have more releases than triggers (meaning button was already down).
+        if release_count > 0 && trigger_count == 0 {
+            self.release_note();
+        }
+
+        // Fallback for automation
+        if trigger_param_val && !self.was_trigger_on {
+            self.trigger_note(1.0);
+        } else if !trigger_param_val && self.was_trigger_on {
+            self.release_note();
+        }
+        self.was_trigger_on = trigger_param_val;
+
+        // 2. Generate mono synth signal for the Block
         let num_samples = buffer.samples();
         for sample_idx in 0..num_samples {
             #[cfg(debug_assertions)]
             {
                 self.debug_phase += 1.0 / self.sample_rate;
                 if self.debug_phase >= 0.5 {
-                    self.debug_phase -= 0.5;
                     self.trigger_note(0.8);
                     self.debug_release_timer = 0.2 * self.sample_rate;
                 }
@@ -638,18 +701,6 @@ impl Plugin for KickSynth {
                     }
                 }
             }
-
-            // Trigger Check
-            let gui_triggered = self.params.gui_trigger.swap(false, Ordering::SeqCst);
-            let gui_released = self.params.gui_release.swap(false, Ordering::SeqCst);
-            let trigger_param_val = self.params.trigger.value();
-
-            if gui_triggered || (trigger_param_val && !self.was_trigger_on) {
-                self.trigger_note(1.0);
-            } else if gui_released && self.was_trigger_on {
-                self.release_note();
-            }
-            self.was_trigger_on = trigger_param_val;
 
             // MIDI Handle
             while let Some(event) = next_event {
