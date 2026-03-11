@@ -193,6 +193,12 @@ pub(crate) fn create(
 
                 SingleKnob::new(cx, Data::params, |params| &params.release, false)
                     .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.nam_input_gain, false)
+                    .width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |params| &params.nam_output_gain, false)
+                    .width(Stretch(1.0));
             })
             .width(Stretch(1.0))
             .left(Stretch(0.05))

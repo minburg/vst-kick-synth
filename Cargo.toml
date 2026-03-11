@@ -15,6 +15,11 @@ nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git" }
 parking_lot = "0.12.5"
 rand = "0.10.0-rc.6"
 webbrowser = "1.0"
+cxx = "1.0.194"
+
+[build-dependencies]
+cxx-build = "1.0.194"
+cmake = "0.1"
 
 [patch."https://github.com/RustAudio/baseview.git"]
 baseview = { path = "./baseview-master" }

@@ -8,8 +8,13 @@ use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use nih_plug::prelude::AtomicF32;
+use parking_lot::RwLock;
+
 
 mod editor;
+mod nam;
+
 
 // Helper function to map a 0-1 value to a logarithmic frequency range
 fn log_scale(value: f32, min: f32, max: f32) -> f32 {
@@ -94,6 +99,12 @@ pub struct KickSynth {
     // Trigger Logic
     was_trigger_on: bool,
     active_midi_note: Option<u8>,
+
+    nam_synth: nam::NamSynth,
+    current_nam_path: String,
+
+    mono_buffer: Vec<f32>,
+    nam_output_buffer: Vec<f32>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -192,6 +203,15 @@ struct KickParams {
     pub gui_trigger: AtomicBool,
     /// Release Logic for the UI (consumed by audio thread)
     pub gui_release: AtomicBool,
+
+    #[id = "nam_input_gain"]
+    pub nam_input_gain: FloatParam,
+
+    #[id = "nam_output_gain"]
+    pub nam_output_gain: FloatParam,
+
+    #[persist = "nam_model_path"]
+    pub nam_model_path: Arc<RwLock<String>>,
 }
 
 impl Default for KickParams {
@@ -378,6 +398,24 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             trigger: BoolParam::new("Trigger", false),
+
+            nam_input_gain: FloatParam::new(
+                "NAM Input Gain",
+                0.0,
+                FloatRange::Linear { min: -18.0, max: 18.0 },
+            )
+            .with_unit("dB")
+            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+
+            nam_output_gain: FloatParam::new(
+                "NAM Output Gain",
+                0.0,
+                FloatRange::Linear { min: -18.0, max: 18.0 },
+            )
+            .with_unit("dB")
+            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+
+            nam_model_path: Arc::new(RwLock::new(String::from("src/resource/nam/Philips_EL3541D.nam"))),
         }
     }
 }
@@ -455,6 +493,12 @@ impl Default for KickSynth {
 
             was_trigger_on: false,
             active_midi_note: None,
+
+            nam_synth: nam::NamSynth::new(44100.0, 2048),
+            current_nam_path: String::new(),
+
+            mono_buffer: Vec::with_capacity(2048),
+            nam_output_buffer: Vec::with_capacity(2048),
         }
     }
 }
@@ -476,6 +520,8 @@ struct SmoothedParams {
     sustain: f32,
     release: f32,
     corrosion_amount: f32,
+    nam_input_gain: f32,
+    nam_output_gain: f32,
 }
 
 impl Plugin for KickSynth {
@@ -526,6 +572,11 @@ impl Plugin for KickSynth {
             -release_db_per_second / (20.0 * _buffer_config.sample_rate),
         );
 
+        // Resize NAM buffers if needed (though max_buffer_size is usually stable)
+        self.mono_buffer.resize(_buffer_config.max_buffer_size as usize, 0.0);
+        self.nam_output_buffer.resize(_buffer_config.max_buffer_size as usize, 0.0);
+        self.nam_synth.update_settings(_buffer_config.sample_rate, _buffer_config.max_buffer_size as i32);
+
         true
     }
 
@@ -561,7 +612,16 @@ impl Plugin for KickSynth {
         let mut max_amplitude_in_block_l: f32 = 0.0;
         let mut max_amplitude_in_block_r: f32 = 0.0;
 
-        for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
+        // 0. Check for model path updates
+        let model_path = self.params.nam_model_path.read().clone();
+        if model_path != self.current_nam_path {
+            self.nam_synth.load_model(&model_path);
+            self.current_nam_path = model_path;
+        }
+
+        // 1. Generate mono synth signal for the Block
+        let num_samples = buffer.samples();
+        for sample_idx in 0..num_samples {
             #[cfg(debug_assertions)]
             {
                 self.debug_phase += 1.0 / self.sample_rate;
@@ -579,7 +639,7 @@ impl Plugin for KickSynth {
                 }
             }
 
-            // 1. Trigger Check (UI Atomic OR Parameter Edge)
+            // Trigger Check
             let gui_triggered = self.params.gui_trigger.swap(false, Ordering::SeqCst);
             let gui_released = self.params.gui_release.swap(false, Ordering::SeqCst);
             let trigger_param_val = self.params.trigger.value();
@@ -591,7 +651,7 @@ impl Plugin for KickSynth {
             }
             self.was_trigger_on = trigger_param_val;
 
-            // 2. MIDI Handle
+            // MIDI Handle
             while let Some(event) = next_event {
                 if event.timing() > sample_idx as u32 {
                     break;
@@ -619,10 +679,6 @@ impl Plugin for KickSynth {
                 next_event = _ctx.next_event();
             }
 
-            // 3. DSP – stereo output pair (L and R may differ due to Corrosion stereo)
-            let mut out_l = 0.0_f32;
-            let mut out_r = 0.0_f32;
-
             let params = SmoothedParams {
                 tune: self.params.tune.smoothed.next(),
                 sweep: self.params.sweep.smoothed.next(),
@@ -640,46 +696,65 @@ impl Plugin for KickSynth {
                 sustain: self.params.sustain.smoothed.next(),
                 release: self.params.release.smoothed.next(),
                 corrosion_amount: self.params.corrosion_amount.smoothed.next(),
+                nam_input_gain: self.params.nam_input_gain.smoothed.next(),
+                nam_output_gain: self.params.nam_output_gain.smoothed.next(),
             };
 
             // Process active voice
-            let (l, r) = Self::compute_voice_sample(
+            let mut mono_sample = Self::compute_voice_sample(
                 &mut self.voice,
                 &params,
                 self.sample_rate,
                 &self.free_rng_state,
                 &self.wavetable,
                 &self.sampled_noise,
-                &self.corrosion,
-                &self.params,
             );
-            out_l += l;
-            out_r += r;
 
             // Process releasing voice
             if let Some(releasing_voice) = &mut self.releasing_voice {
-                let (l, r) = Self::compute_voice_sample(
+                mono_sample += Self::compute_voice_sample(
                     releasing_voice,
                     &params,
                     self.sample_rate,
                     &self.free_rng_state,
                     &self.wavetable,
                     &self.sampled_noise,
-                    &self.corrosion,
-                    &self.params,
                 );
-                out_l += l;
-                out_r += r;
-                if releasing_voice.current_phase == EnvelopePhase::Idle {
+                if releasing_voice.current_phase == EnvelopePhase::Idle && releasing_voice.tex_env_phase == EnvelopePhase::Idle {
                     self.releasing_voice = None;
                 }
             }
+            
+            let input_gain_amp = util::db_to_gain_fast(params.nam_input_gain);
+            self.mono_buffer[sample_idx] = mono_sample * input_gain_amp;
+        }
+
+        // 2. Apply NAM Block
+        self.nam_synth.process_block(
+            &self.mono_buffer[0..num_samples],
+            &mut self.nam_output_buffer[0..num_samples],
+        );
+
+        let output_gain_amp = util::db_to_gain_fast(self.params.nam_output_gain.smoothed.next());
+
+        // 3. Post-NAM: Stereoize and write to output
+        for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
+            let driven = self.nam_output_buffer[sample_idx] * output_gain_amp;
+            
+            // Note: We use the current smoothed value of corrosion_amount for the second pass.
+            // In a better implementation, we'd buffer the smoothed values too, but this is usually fine for parameters.
+            let (out_l, out_r) = Self::apply_corrosion(
+                self.sample_rate,
+                driven,
+                self.params.corrosion_amount.value(),
+                &self.corrosion,
+                &self.params,
+            );
 
             let abs_l = out_l.abs();
             if abs_l > max_amplitude_in_block_l {
                 max_amplitude_in_block_l = abs_l;
             }
-
             let abs_r = out_r.abs();
             if abs_r > max_amplitude_in_block_r {
                 max_amplitude_in_block_r = abs_r;
@@ -722,12 +797,7 @@ impl KickSynth {
         free_rng_state: &Cell<u32>,
         wavetable: &[f32],
         sampled_noise: &[f32],
-        corrosion: &RefCell<CorrosionState>,
-        kick_params: &Arc<KickParams>,
-    ) -> (f32, f32) {
-        let mut out_l = 0.0;
-        let mut out_r = 0.0;
-
+    ) -> f32 {
         if voice.current_phase != EnvelopePhase::Idle || voice.tex_env_phase != EnvelopePhase::Idle {
             // ADSR Logic
             match voice.current_phase {
@@ -973,23 +1043,16 @@ impl KickSynth {
             let drive_wet = params.drive.sqrt();
             let driven = pre_drive * (1.0 - drive_wet) + driven_signal * drive_wet;
 
-            let (corr_l, corr_r) = Self::apply_corrosion(
-                sample_rate,
-                driven,
-                params.corrosion_amount,
-                corrosion,
-                kick_params,
-            );
-
-            out_l = corr_l * voice.midi_velocity * 0.9;
-            out_r = corr_r * voice.midi_velocity * 0.9;
+            let output_val = driven * voice.midi_velocity * 0.9;
 
             if voice.current_phase != EnvelopePhase::Idle {
                 voice.pitch_env_timer += 1.0;
                 voice.phase_timer += 1.0;
             }
+            output_val
+        } else {
+            0.0
         }
-        (out_l, out_r)
     }
 
     fn trigger_note(&mut self, velocity: f32) {
