@@ -13,6 +13,7 @@ use parking_lot::RwLock;
 
 
 mod editor;
+#[cfg(feature = "nam")]
 mod nam;
 
 const NAM_MODEL_PHILIPS: &str = include_str!("resource/nam/Philips_EL3541D.nam");
@@ -104,6 +105,7 @@ pub struct KickSynth {
     was_trigger_on: bool,
     active_midi_note: Option<u8>,
 
+    #[cfg(feature = "nam")]
     nam_synth: nam::NamSynth,
     current_nam_model: Option<NamModel>,
 
@@ -513,6 +515,7 @@ impl Default for KickSynth {
             was_trigger_on: false,
             active_midi_note: None,
 
+            #[cfg(feature = "nam")]
             nam_synth: nam::NamSynth::new(44100.0, 2048),
             current_nam_model: None,
 
@@ -594,6 +597,7 @@ impl Plugin for KickSynth {
         // Resize NAM buffers if needed (though max_buffer_size is usually stable)
         self.mono_buffer.resize(_buffer_config.max_buffer_size as usize, 0.0);
         self.nam_output_buffer.resize(_buffer_config.max_buffer_size as usize, 0.0);
+        #[cfg(feature = "nam")]
         self.nam_synth.update_settings(_buffer_config.sample_rate, _buffer_config.max_buffer_size as i32);
 
         true
@@ -634,13 +638,14 @@ impl Plugin for KickSynth {
         // 0. Update NAM model if changed
         let selected_model = self.params.nam_model.value();
         if self.current_nam_model != Some(selected_model) {
-            let content = match selected_model {
+            let _content = match selected_model {
                 NamModel::PhilipsEL3541D => NAM_MODEL_PHILIPS,
                 NamModel::CultureVulture => NAM_MODEL_CULTURE_VULTURE,
                 NamModel::JH24 => NAM_MODEL_JH24,
             };
 
-            match self.nam_synth.load_model_content(content) {
+            #[cfg(feature = "nam")]
+            match self.nam_synth.load_model_content(_content) {
                 Ok(_) => {
                     self.params.nam_is_loaded.store(true, Ordering::SeqCst);
                     if let Some(mut text) = self.params.nam_status_text.try_write() {
@@ -781,6 +786,7 @@ impl Plugin for KickSynth {
         }
 
         // 2. Apply NAM Block
+        #[cfg(feature = "nam")]
         self.nam_synth.process_block(
             &self.mono_buffer[0..num_samples],
             &mut self.nam_output_buffer[0..num_samples],

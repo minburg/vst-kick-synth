@@ -12,6 +12,7 @@ pub enum SingleKnobEvent {
 #[derive(Lens)]
 pub struct SingleKnob {
     param_base: ParamWidgetBase,
+    size: f32,
 }
 
 impl SingleKnob {
@@ -19,7 +20,8 @@ impl SingleKnob {
         cx: &mut Context,
         params: L,
         params_to_param: FMap,
-        centered: bool,
+        _centered: bool,
+        size: f32,
     ) -> Handle<'_, Self>
     where
         L: Lens<Target = Params> + Clone + Copy,
@@ -29,6 +31,7 @@ impl SingleKnob {
     {
         Self {
             param_base: ParamWidgetBase::new(cx, params.clone(), params_to_param),
+            size,
         }
         .build(
             cx,
@@ -52,16 +55,16 @@ impl SingleKnob {
                             ZStack::new(cx, |cx| {
                                 // Transparent "Hit Surface" to capture mouse everywhere
                                 Element::new(cx)
-                                    .width(Pixels(95.0))
-                                    .height(Pixels(95.0))
+                                    .width(Pixels(size))
+                                    .height(Pixels(size))
                                     .class("single-knob-hitbox");
 
                                 // Vintage Knob Image
                                 // This element replaces the arc. Define the image in CSS using the .vintage-knob class.
                                 Element::new(cx)
                                     .class("vintage-knob")
-                                    .width(Pixels(95.0))
-                                    .height(Pixels(95.0))
+                                    .width(Pixels(size))
+                                    .height(Pixels(size))
                                     // Rotate from -150 deg (at 0.0) to 150 deg (at 1.0)
                                     .rotate(lens.map(|val| Angle::Deg(val * 300.0 - 18.0)));
                             })
