@@ -4,6 +4,7 @@
 
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -15,48 +16,76 @@ fn log_scale(value: f32, min: f32, max: f32) -> f32 {
     min * (max / min).powf(value)
 }
 
+#[derive(Clone)]
+struct VoiceState {
+    phase: f32,
+    envelope_value: f32,
+    current_phase: EnvelopePhase,
+    phase_timer: f32,
+    release_coeff: f32,
+    pitch_env_timer: f32,
+    tex_env_value: f32,
+    tex_env_phase: EnvelopePhase,
+    wt_phase: f32,
+    tex_filter_state: f32,
+    tex_filter_state_2: f32,
+    static_rng_state: u32,
+    midi_velocity: f32,
+    analog_drift: f32,
+    fast_release: bool,
+}
+
+impl Default for VoiceState {
+    fn default() -> Self {
+        Self {
+            phase: 0.0,
+            envelope_value: 0.0,
+            current_phase: EnvelopePhase::Idle,
+            phase_timer: 0.0,
+            release_coeff: 0.0,
+            pitch_env_timer: 0.0,
+            tex_env_value: 0.0,
+            tex_env_phase: EnvelopePhase::Idle,
+            wt_phase: 0.0,
+            tex_filter_state: 0.0,
+            tex_filter_state_2: 0.0,
+            static_rng_state: 1337,
+            midi_velocity: 1.0,
+            analog_drift: 0.0,
+            fast_release: false,
+        }
+    }
+}
+
+struct CorrosionState {
+    buf_l: Vec<f32>,
+    buf_r: Vec<f32>,
+    write: usize,
+    sine_phase: f32,
+    bp_l: [f32; 2],
+    bp_r: [f32; 2],
+    rng: u32,
+}
+
 pub struct KickSynth {
     params: Arc<KickParams>,
     sample_rate: f32,
 
-    // DSP State
-    phase: f32,
+    voice: VoiceState,
+    releasing_voice: Option<VoiceState>,
+
     #[cfg(debug_assertions)]
     debug_phase: f32,
     #[cfg(debug_assertions)]
     debug_release_timer: f32,
 
-    // ADSR State
-    envelope_value: f32,
-    current_phase: EnvelopePhase,
-    phase_timer: f32,
-    release_coeff: f32,
-
-    // Pitch Envelope State
-    pitch_env_timer: f32,
-
     // Texture State
-    tex_env_value: f32,
-    tex_env_phase: EnvelopePhase,
-    tex_release_early: bool,
-    wt_phase: f32,
-    tex_filter_state: f32,
-    tex_filter_state_2: f32,
     wavetable: Vec<f32>,
     sampled_noise: Vec<f32>,
-    static_rng_state: u32,
-    free_rng_state: u32,
+    free_rng_state: Cell<u32>,
 
     // Corrosion (Erosion-style phase-modulated delay) State
-    corrosion_buf_l: Vec<f32>,
-    corrosion_buf_r: Vec<f32>,
-    corrosion_write: usize,
-    corrosion_sine_phase: f32,
-    // Bandpass filter states for noise modulator (two 1-pole stages each channel)
-    corrosion_bp_l: [f32; 2],
-    corrosion_bp_r: [f32; 2],
-    // Small LCG for corrosion noise generation
-    corrosion_rng: u32,
+    corrosion: RefCell<CorrosionState>,
 
     meter_decay_per_sample: f32,
     peak_meter_l: Arc<AtomicF32>,
@@ -64,9 +93,7 @@ pub struct KickSynth {
 
     // Trigger Logic
     was_trigger_on: bool,
-    midi_velocity: f32,
     active_midi_note: Option<u8>,
-    analog_drift: f32,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -402,46 +429,53 @@ impl Default for KickSynth {
         Self {
             params: Arc::new(KickParams::default()),
             sample_rate: 44100.0,
-            phase: 0.0,
+            voice: VoiceState::default(),
+            releasing_voice: None,
             #[cfg(debug_assertions)]
             debug_phase: 0.0,
             #[cfg(debug_assertions)]
             debug_release_timer: -1.0,
-            envelope_value: 0.0,
-            current_phase: EnvelopePhase::Idle,
-            phase_timer: 0.0,
-            release_coeff: 0.0,
-            pitch_env_timer: 0.0,
-
-            tex_env_value: 0.0,
-            tex_env_phase: EnvelopePhase::Idle,
-            tex_release_early: false,
-            wt_phase: 0.0,
-            tex_filter_state: 0.0,
-            tex_filter_state_2: 0.0,
             wavetable,
             sampled_noise,
-            static_rng_state: 1337,
-            free_rng_state: 80085,
+            free_rng_state: Cell::new(80085),
 
-            corrosion_buf_l: vec![0.0; corrosion_buf_size],
-            corrosion_buf_r: vec![0.0; corrosion_buf_size],
-            corrosion_write: 0,
-            corrosion_sine_phase: 0.0,
-            corrosion_bp_l: [0.0; 2],
-            corrosion_bp_r: [0.0; 2],
-            corrosion_rng: 0xDEAD_BEEF,
+            corrosion: RefCell::new(CorrosionState {
+                buf_l: vec![0.0; corrosion_buf_size],
+                buf_r: vec![0.0; corrosion_buf_size],
+                write: 0,
+                sine_phase: 0.0,
+                bp_l: [0.0; 2],
+                bp_r: [0.0; 2],
+                rng: 0xDEAD_BEEF,
+            }),
 
             meter_decay_per_sample: 1.0,
             peak_meter_l: Arc::new(AtomicF32::new(0.0)), // 0.0 Linear = Silence
             peak_meter_r: Arc::new(AtomicF32::new(0.0)),
 
             was_trigger_on: false,
-            midi_velocity: 1.0,
             active_midi_note: None,
-            analog_drift: 0.0,
         }
     }
+}
+
+struct SmoothedParams {
+    tune: f32,
+    sweep: f32,
+    pitch_decay: f32,
+    drive: f32,
+    drive_model: i32,
+    tex_amt: f32,
+    tex_decay: f32,
+    tex_variation: f32,
+    analog_variation: f32,
+    tex_type: i32,
+    tex_tone: f32,
+    attack: f32,
+    decay: f32,
+    sustain: f32,
+    release: f32,
+    corrosion_amount: f32,
 }
 
 impl Plugin for KickSynth {
@@ -477,18 +511,16 @@ impl Plugin for KickSynth {
         self.sample_rate = _buffer_config.sample_rate;
 
         // Resize corrosion delay buffers for the actual sample rate.
-        // We need at least (base_delay + max_mod_depth) * sample_rate samples:
-        //   2ms base + 1ms max depth = 3ms => sample_rate * 0.003, rounded up with margin.
         let corrosion_buf_size =
             ((_buffer_config.sample_rate * 0.004) as usize + 4).next_power_of_two();
-        self.corrosion_buf_l = vec![0.0; corrosion_buf_size];
-        self.corrosion_buf_r = vec![0.0; corrosion_buf_size];
-        self.corrosion_write = 0;
+        let mut corrosion_state = self.corrosion.borrow_mut();
+        corrosion_state.buf_l = vec![0.0; corrosion_buf_size];
+        corrosion_state.buf_r = vec![0.0; corrosion_buf_size];
+        corrosion_state.write = 0;
 
         let release_db_per_second = 160.0;
 
         // Calculate the constant for 1 sample of decay
-        // We store this in the struct
         self.meter_decay_per_sample = f32::powf(
             10.0,
             -release_db_per_second / (20.0 * _buffer_config.sample_rate),
@@ -498,28 +530,24 @@ impl Plugin for KickSynth {
     }
 
     fn reset(&mut self) {
-        self.phase = 0.0;
         #[cfg(debug_assertions)]
         {
             self.debug_phase = 0.0;
             self.debug_release_timer = -1.0;
         }
-        self.envelope_value = 0.0;
-        self.current_phase = EnvelopePhase::Idle;
-        self.release_coeff = 0.0;
-        self.tex_env_value = 0.0;
-        self.tex_env_phase = EnvelopePhase::Idle;
+        self.voice = VoiceState::default();
+        self.releasing_voice = None;
         self.was_trigger_on = false;
-        self.tex_release_early = false;
         self.active_midi_note = None;
 
         // Clear corrosion state
-        self.corrosion_buf_l.iter_mut().for_each(|s| *s = 0.0);
-        self.corrosion_buf_r.iter_mut().for_each(|s| *s = 0.0);
-        self.corrosion_write = 0;
-        self.corrosion_sine_phase = 0.0;
-        self.corrosion_bp_l = [0.0; 2];
-        self.corrosion_bp_r = [0.0; 2];
+        let mut corrosion_state = self.corrosion.borrow_mut();
+        corrosion_state.buf_l.iter_mut().for_each(|s| *s = 0.0);
+        corrosion_state.buf_r.iter_mut().for_each(|s| *s = 0.0);
+        corrosion_state.write = 0;
+        corrosion_state.sine_phase = 0.0;
+        corrosion_state.bp_l = [0.0; 2];
+        corrosion_state.bp_r = [0.0; 2];
     }
 
     fn process(
@@ -528,7 +556,6 @@ impl Plugin for KickSynth {
         _aux: &mut AuxiliaryBuffers,
         _ctx: &mut impl ProcessContext<Self>,
     ) -> ProcessStatus {
-        let sample_rate = self.sample_rate;
         let mut next_event = _ctx.next_event();
 
         let mut max_amplitude_in_block_l: f32 = 0.0;
@@ -537,11 +564,11 @@ impl Plugin for KickSynth {
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
             #[cfg(debug_assertions)]
             {
-                self.debug_phase += 1.0 / sample_rate;
+                self.debug_phase += 1.0 / self.sample_rate;
                 if self.debug_phase >= 0.5 {
                     self.debug_phase -= 0.5;
                     self.trigger_note(0.8);
-                    self.debug_release_timer = 0.2 * sample_rate;
+                    self.debug_release_timer = 0.2 * self.sample_rate;
                 }
 
                 if self.debug_release_timer > 0.0 {
@@ -571,7 +598,6 @@ impl Plugin for KickSynth {
                 }
                 match event {
                     NoteEvent::NoteOn { velocity, note, .. } => {
-                        // Accept any note on any channel
                         if velocity > 0.0 {
                             self.active_midi_note = Some(note);
                             self.trigger_note(velocity);
@@ -583,7 +609,6 @@ impl Plugin for KickSynth {
                         }
                     }
                     NoteEvent::NoteOff { note, .. } => {
-                        // Accept any note off on any channel
                         if self.active_midi_note == Some(note) {
                             self.release_note();
                             self.active_midi_note = None;
@@ -598,388 +623,66 @@ impl Plugin for KickSynth {
             let mut out_l = 0.0_f32;
             let mut out_r = 0.0_f32;
 
-            if self.current_phase != EnvelopePhase::Idle
-                || self.tex_env_phase != EnvelopePhase::Idle
-            {
-                let base_freq = self.params.tune.smoothed.next();
-                let sweep_amt = self.params.sweep.smoothed.next();
-                let pitch_decay_ms = self.params.pitch_decay.smoothed.next();
-                let drive = self.params.drive.smoothed.next();
-                let drive_model = self.params.drive_model.value();
+            let params = SmoothedParams {
+                tune: self.params.tune.smoothed.next(),
+                sweep: self.params.sweep.smoothed.next(),
+                pitch_decay: self.params.pitch_decay.smoothed.next(),
+                drive: self.params.drive.smoothed.next(),
+                drive_model: self.params.drive_model.value(),
+                tex_amt: self.params.tex_amt.smoothed.next(),
+                tex_decay: self.params.tex_decay.smoothed.next(),
+                tex_variation: self.params.tex_variation.smoothed.next(),
+                analog_variation: self.params.analog_variation.smoothed.next(),
+                tex_type: self.params.tex_type.value(),
+                tex_tone: self.params.tex_tone.smoothed.next(),
+                attack: self.params.attack.smoothed.next(),
+                decay: self.params.decay.smoothed.next(),
+                sustain: self.params.sustain.smoothed.next(),
+                release: self.params.release.smoothed.next(),
+                corrosion_amount: self.params.corrosion_amount.smoothed.next(),
+            };
 
-                let tex_amt = self.params.tex_amt.smoothed.next();
-                let tex_decay_ms = self.params.tex_decay.smoothed.next();
-                let rand_param = self.params.tex_variation.smoothed.next();
-                let analog_param = self.params.analog_variation.smoothed.next();
-                let tex_type = self.params.tex_type.value();
-                let tex_tone = self.params.tex_tone.smoothed.next();
+            // Process active voice
+            let (l, r) = Self::compute_voice_sample(
+                &mut self.voice,
+                &params,
+                self.sample_rate,
+                &self.free_rng_state,
+                &self.wavetable,
+                &self.sampled_noise,
+                &self.corrosion,
+                &self.params,
+            );
+            out_l += l;
+            out_r += r;
 
-                let attack_ms = self.params.attack.smoothed.next();
-                let decay_ms = self.params.decay.smoothed.next();
-                let sustain_lvl = self.params.sustain.smoothed.next();
-                let release_ms = self.params.release.smoothed.next();
-
-                // ADSR Logic
-                match self.current_phase {
-                    EnvelopePhase::Attack => {
-                        let attack_samples = (sample_rate * (attack_ms / 1000.0)).max(1.0);
-                        self.envelope_value += 1.0 / attack_samples;
-                        if self.envelope_value >= 1.0 {
-                            self.envelope_value = 1.0;
-                            self.current_phase = EnvelopePhase::Decay;
-                            self.phase_timer = 0.0;
-                        }
-                    }
-                    EnvelopePhase::Decay => {
-                        let decay_samples = (sample_rate * (decay_ms / 1000.0)).max(1.0);
-                        let target = sustain_lvl;
-                        self.envelope_value -= (1.0 - target) / decay_samples;
-
-                        if self.envelope_value <= target {
-                            self.envelope_value = target;
-                            if target <= 0.0 {
-                                self.current_phase = EnvelopePhase::Idle;
-                            } else {
-                                self.current_phase = EnvelopePhase::Sustain;
-                                self.phase_timer = 0.0;
-                            }
-                        }
-                    }
-                    EnvelopePhase::Sustain => {
-                        self.envelope_value = sustain_lvl;
-                    }
-                    EnvelopePhase::Release => {
-                        if self.phase_timer == 0.0 {
-                            let release_samples = (sample_rate * (release_ms / 1000.0)).max(1.0);
-                            self.release_coeff = (0.0001f32).powf(1.0 / release_samples);
-                        }
-
-                        self.envelope_value *= self.release_coeff;
-                        self.phase_timer += 1.0;
-
-                        if self.envelope_value < 1e-6 {
-                            self.envelope_value = 0.0;
-                            self.current_phase = EnvelopePhase::Idle;
-                        }
-                    }
-                    _ => {}
+            // Process releasing voice
+            if let Some(releasing_voice) = &mut self.releasing_voice {
+                let (l, r) = Self::compute_voice_sample(
+                    releasing_voice,
+                    &params,
+                    self.sample_rate,
+                    &self.free_rng_state,
+                    &self.wavetable,
+                    &self.sampled_noise,
+                    &self.corrosion,
+                    &self.params,
+                );
+                out_l += l;
+                out_r += r;
+                if releasing_voice.current_phase == EnvelopePhase::Idle {
+                    self.releasing_voice = None;
                 }
+            }
 
-                // Pitch Envelope
-                let pitch_t = self.pitch_env_timer / (sample_rate * (pitch_decay_ms / 1000.0));
-                let pitch_env_val = if pitch_t < 1.0 {
-                    (1.0 - pitch_t).powf(3.0)
-                } else {
-                    0.0
-                };
+            let abs_l = out_l.abs();
+            if abs_l > max_amplitude_in_block_l {
+                max_amplitude_in_block_l = abs_l;
+            }
 
-                let current_freq =
-                    base_freq + (self.analog_drift * analog_param) + (sweep_amt * pitch_env_val);
-                let phase_inc = current_freq / sample_rate;
-                self.phase = (self.phase + phase_inc).fract();
-
-                let sine_wave = (self.phase * 2.0 * std::f32::consts::PI).sin();
-                let signal = sine_wave * self.envelope_value;
-
-                // Texture Logic
-                let mut tex_signal = 0.0;
-                match self.tex_env_phase {
-                    EnvelopePhase::Decay => {
-                        let decay_samples = (sample_rate * (tex_decay_ms / 1000.0)).max(1.0);
-                        self.tex_env_value -= 1.0 / decay_samples;
-                        if self.tex_env_value <= 0.0 {
-                            self.tex_env_value = 0.0;
-                            self.tex_env_phase = EnvelopePhase::Idle;
-                        }
-                    }
-                    EnvelopePhase::Release => {
-                        let release_samples = (sample_rate * (10.0 / 1000.0)).max(1.0); // 10ms release
-                        self.tex_env_value -= 1.0 / release_samples;
-                        if self.tex_env_value <= 0.0 {
-                            self.tex_env_value = 0.0;
-                            self.tex_env_phase = EnvelopePhase::Idle;
-                        }
-                    }
-                    _ => {}
-                }
-
-                if self.tex_env_phase != EnvelopePhase::Idle && tex_amt > 0.0 {
-                    self.static_rng_state = self
-                        .static_rng_state
-                        .wrapping_mul(1664525)
-                        .wrapping_add(1013904223);
-                    self.free_rng_state = self
-                        .free_rng_state
-                        .wrapping_mul(1664525)
-                        .wrapping_add(1013904223);
-
-                    let static_val = (self.static_rng_state as f32) / (u32::MAX as f32);
-                    let free_val = (self.free_rng_state as f32) / (u32::MAX as f32);
-
-                    let static_sym = static_val * 2.0 - 1.0;
-                    let free_sym = free_val * 2.0 - 1.0;
-
-                    let noise_val = match tex_type {
-                        1 => {
-                            let threshold = 0.999 - (tex_tone * 0.1);
-                            let static_dust = if static_val > threshold {
-                                static_sym
-                            } else {
-                                0.0
-                            };
-                            let free_dust = if free_val > threshold { free_sym } else { 0.0 };
-                            let raw_dust =
-                                static_dust * (1.0 - rand_param) + free_dust * rand_param;
-
-                            // Lowpass filter explicitly mapped by tex_tone
-                            let cutoff = 8000.0 * (1.0 - tex_tone * 0.9);
-                            let dt = 1.0 / sample_rate;
-                            let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
-                            let alpha = dt / (rc + dt);
-
-                            self.tex_filter_state += alpha * (raw_dust - self.tex_filter_state);
-                            self.tex_filter_state * 3.0
-                        }
-                        2 => {
-                            let cutoff = 200.0 * (50.0_f32).powf(tex_tone);
-                            let dt = 1.0 / sample_rate;
-                            let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
-                            let alpha = dt / (rc + dt);
-
-                            let eq_pwr_static = (1.0 - rand_param).sqrt();
-                            let eq_pwr_free = rand_param.sqrt();
-                            let combined_noise =
-                                static_sym * eq_pwr_static + free_sym * eq_pwr_free;
-
-                            self.tex_filter_state +=
-                                alpha * (combined_noise - self.tex_filter_state);
-                            let shaped = self.tex_filter_state
-                                * self.tex_filter_state
-                                * self.tex_filter_state
-                                * 10.0;
-                            shaped.clamp(-1.0, 1.0)
-                        }
-                        3 => {
-                            // Sampled Noise playback
-                            let mut t = self.wt_phase * (self.sampled_noise.len() as f32);
-                            let playback_speed = 0.5 + tex_tone;
-
-                            self.wt_phase += playback_speed / sample_rate;
-                            if self.wt_phase >= 1.0 {
-                                self.wt_phase -= 1.0;
-                            }
-                            if self.wt_phase < 0.0 {
-                                self.wt_phase += 1.0;
-                            }
-
-                            t = t.clamp(0.0, (self.sampled_noise.len() - 2) as f32);
-                            let idx1 = t as usize;
-                            let idx2 = idx1 + 1;
-                            let frac = t.fract();
-
-                            let s1 = self.sampled_noise[idx1];
-                            let s2 = self.sampled_noise[idx2];
-                            s1 + frac * (s2 - s1)
-                        }
-                        4 => {
-                            let base_freq = 20.0 * (50.0_f32).powf(tex_tone);
-                            let eq_pwr_static = (1.0 - rand_param).sqrt();
-                            let eq_pwr_free = rand_param.sqrt();
-                            let combined_noise =
-                                static_sym * eq_pwr_static + free_sym * eq_pwr_free;
-
-                            let freq = base_freq * (1.0 + 0.05 * combined_noise);
-                            let phase_inc = freq / sample_rate;
-                            self.wt_phase = (self.wt_phase + phase_inc).fract();
-
-                            let wt_len = self.wavetable.len() as f32;
-                            let idx = self.wt_phase * wt_len;
-                            let idx_i = idx as usize;
-                            let idx_next = (idx_i + 1) % self.wavetable.len();
-                            let frac = idx.fract();
-
-                            let s1 = self.wavetable[idx_i];
-                            let s2 = self.wavetable[idx_next];
-                            s1 + frac * (s2 - s1)
-                        }
-                        5 => {
-                            // Vinyl Hiss & Pop
-                            let eq_pwr_static = (1.0 - rand_param).sqrt();
-                            let eq_pwr_free = rand_param.sqrt();
-                            let hiss_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
-
-                            // Pop generator
-                            let mix_val = static_val * (1.0 - rand_param) + free_val * rand_param;
-                            let pop_threshold = 0.9995 - (tex_tone * 0.005);
-                            let pop = if mix_val > pop_threshold {
-                                1.5 * hiss_noise.signum()
-                            } else {
-                                0.0
-                            };
-
-                            // Soft filter on hiss
-                            let cutoff = 4000.0;
-                            let dt = 1.0 / sample_rate;
-                            let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
-                            let alpha = dt / (rc + dt);
-                            self.tex_filter_state += alpha * (hiss_noise - self.tex_filter_state);
-
-                            let noise = self.tex_filter_state * 0.3 + pop;
-                            noise.clamp(-1.0, 1.0)
-                        }
-                        6 => {
-                            // Electrical Zap/FM style burst
-                            let freq = 1000.0 * (4.0_f32).powf(tex_tone);
-                            let mut mod_freq = freq * 0.5 * rand_param;
-                            if rand_param <= 0.0 {
-                                mod_freq = freq * 0.5; // Ensure mode is interesting at 0.0 randomness
-                            }
-
-                            // Free-running modulator
-                            let drift = (free_val - 0.5) * 200.0 * rand_param;
-                            self.tex_filter_state_2 = (self.tex_filter_state_2
-                                + (mod_freq + drift) / sample_rate)
-                                .fract();
-                            let mo = (self.tex_filter_state_2 * 2.0 * std::f32::consts::PI).sin();
-
-                            self.wt_phase =
-                                (self.wt_phase + (freq + mo * 1000.0) / sample_rate).fract();
-                            (self.wt_phase * 2.0 * std::f32::consts::PI).sin() * 0.6
-                        }
-                        _ => 0.0,
-                    };
-                    tex_signal = noise_val * self.tex_env_value * tex_amt * 0.4 * 0.7;
-                    // Lowered texture volume by 30%
-                }
-
-                let vel_mult = self.midi_velocity * (127.0 / 100.0);
-                let pre_drive = (signal + tex_signal) * vel_mult;
-
-                let driven_signal = match drive_model {
-                    1 => Self::drive_tape_classic(drive, pre_drive) * 0.89125, // -1dB
-                    2 => Self::drive_tape_modern(drive, pre_drive) * 1.412,
-                    3 => Self::drive_tube_triode(drive, pre_drive) * 0.917,
-                    4 => Self::drive_tube_pentode(drive, pre_drive) * 0.79433, // -2dB
-                    5 => {
-                        let scaled_drive = drive * 0.59;
-                        Self::drive_saturation_digital(scaled_drive, pre_drive) * 0.729
-                    }
-                    _ => Self::drive_tape_classic(drive, pre_drive) * 0.89125,
-                };
-
-                // Ensure all distortion types sound clean when gain is 0% using a dry/wet crossfade mapping
-                let drive_wet = drive.sqrt(); // Keep curve musical
-                let driven = pre_drive * (1.0 - drive_wet) + driven_signal * drive_wet;
-
-                // ----- Corrosion (Erosion-style modulated delay) -----
-                // Returns a stereo (L, R) pair; both are the same when amount == 0.
-                let corr_amount = self.params.corrosion_amount.smoothed.next();
-                let (corr_l, corr_r) = if corr_amount > 0.0 {
-                    let corr_freq_norm = self.params.corrosion_frequency.smoothed.next();
-                    let corr_freq = log_scale(corr_freq_norm, 15.0, 22000.0);
-                    let corr_width = self.params.corrosion_width.smoothed.next();
-                    let corr_blend = self.params.corrosion_noise_blend.smoothed.next();
-                    let corr_stereo = self.params.corrosion_stereo.smoothed.next();
-
-                    // Constants matching the Ableton 12.4 spec
-                    const BASE_DELAY: f32 = 0.002; // 2 ms
-                    const MAX_MOD_DEPTH: f32 = 0.001; // 1 ms max fluctuation
-
-                    // 1. Sine modulators (stereo phase offset)
-                    let sine_l = (self.corrosion_sine_phase * std::f32::consts::TAU).sin();
-                    let sine_r = ((self.corrosion_sine_phase * std::f32::consts::TAU)
-                        + corr_stereo * std::f32::consts::PI)
-                        .sin();
-                    self.corrosion_sine_phase =
-                        (self.corrosion_sine_phase + corr_freq / sample_rate).fract();
-
-                    // 2. Independent white noise for each channel (LCG)
-                    self.corrosion_rng = self
-                        .corrosion_rng
-                        .wrapping_mul(1_664_525)
-                        .wrapping_add(1_013_904_223);
-                    let raw_noise_l = (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
-                    self.corrosion_rng = self
-                        .corrosion_rng
-                        .wrapping_mul(1_664_525)
-                        .wrapping_add(1_013_904_223);
-                    let raw_noise_r = (self.corrosion_rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
-
-                    // 3. Bandpass-filter noise (2nd-order approximation: LP then HP derived
-                    //    from LP; bandwidth controlled by corr_width)
-                    let lp_cutoff = (corr_freq * corr_width.max(0.01)).min(sample_rate * 0.499);
-                    let hp_cutoff = (corr_freq / corr_width.max(0.01).max(1.0)).max(1.0);
-                    let dt = 1.0 / sample_rate;
-                    let lp_a = dt / (1.0 / (std::f32::consts::TAU * lp_cutoff) + dt);
-                    let hp_a = dt / (1.0 / (std::f32::consts::TAU * hp_cutoff) + dt);
-
-                    // Left channel BP
-                    self.corrosion_bp_l[0] += lp_a * (raw_noise_l - self.corrosion_bp_l[0]);
-                    let lp_l = self.corrosion_bp_l[0];
-                    self.corrosion_bp_l[1] += hp_a * (lp_l - self.corrosion_bp_l[1]);
-                    let bp_l = lp_l - self.corrosion_bp_l[1]; // bandpass = LP - LP-of-LP
-
-                    // Right channel BP
-                    self.corrosion_bp_r[0] += lp_a * (raw_noise_r - self.corrosion_bp_r[0]);
-                    let lp_r = self.corrosion_bp_r[0];
-                    self.corrosion_bp_r[1] += hp_a * (lp_r - self.corrosion_bp_r[1]);
-                    let bp_r = lp_r - self.corrosion_bp_r[1];
-
-                    // 4. Stereo decorrelation for noise (lerp from mono L → uncorrelated R)
-                    let noise_l = bp_l;
-                    let noise_r = noise_l + corr_stereo * (bp_r - noise_l);
-
-                    // 5. Noise-blend: crossfade sine <-> bandpassed noise
-                    let mod_l = sine_l + corr_blend * (noise_l - sine_l);
-                    let mod_r = sine_r + corr_blend * (noise_r - sine_r);
-
-                    // 6. Convert modulation signal to delay time in samples
-                    let delay_samples_l =
-                        (BASE_DELAY + mod_l * corr_amount * MAX_MOD_DEPTH).max(0.0) * sample_rate;
-                    let delay_samples_r =
-                        (BASE_DELAY + mod_r * corr_amount * MAX_MOD_DEPTH).max(0.0) * sample_rate;
-
-                    // 7. Write input to delay buffers
-                    let buf_len = self.corrosion_buf_l.len();
-                    self.corrosion_buf_l[self.corrosion_write] = driven;
-                    self.corrosion_buf_r[self.corrosion_write] = driven;
-
-                    // 8. Read back with linear interpolation at the modulated delay time
-                    let read_l = Self::corrosion_read(
-                        &self.corrosion_buf_l,
-                        self.corrosion_write,
-                        delay_samples_l,
-                    );
-                    let read_r = Self::corrosion_read(
-                        &self.corrosion_buf_r,
-                        self.corrosion_write,
-                        delay_samples_r,
-                    );
-
-                    self.corrosion_write = (self.corrosion_write + 1) % buf_len;
-
-                    (read_l, read_r)
-                } else {
-                    (driven, driven)
-                };
-
-                out_l = corr_l * self.midi_velocity * 0.9;
-                out_r = corr_r * self.midi_velocity * 0.9;
-
-                let abs_l = out_l.abs();
-                if abs_l > max_amplitude_in_block_l {
-                    max_amplitude_in_block_l = abs_l;
-                }
-
-                let abs_r = out_r.abs();
-                if abs_r > max_amplitude_in_block_r {
-                    max_amplitude_in_block_r = abs_r;
-                }
-
-                if self.current_phase != EnvelopePhase::Idle {
-                    self.pitch_env_timer += 1.0;
-                    self.phase_timer += 1.0;
-                }
+            let abs_r = out_r.abs();
+            if abs_r > max_amplitude_in_block_r {
+                max_amplitude_in_block_r = abs_r;
             }
 
             // Write stereo output
@@ -1012,130 +715,380 @@ impl Plugin for KickSynth {
 }
 
 impl KickSynth {
+    fn compute_voice_sample(
+        voice: &mut VoiceState,
+        params: &SmoothedParams,
+        sample_rate: f32,
+        free_rng_state: &Cell<u32>,
+        wavetable: &[f32],
+        sampled_noise: &[f32],
+        corrosion: &RefCell<CorrosionState>,
+        kick_params: &Arc<KickParams>,
+    ) -> (f32, f32) {
+        let mut out_l = 0.0;
+        let mut out_r = 0.0;
+
+        if voice.current_phase != EnvelopePhase::Idle || voice.tex_env_phase != EnvelopePhase::Idle {
+            // ADSR Logic
+            match voice.current_phase {
+                EnvelopePhase::Attack => {
+                    let attack_samples = (sample_rate * (params.attack / 1000.0)).max(1.0);
+                    voice.envelope_value += 1.0 / attack_samples;
+                    if voice.envelope_value >= 1.0 {
+                        voice.envelope_value = 1.0;
+                        voice.current_phase = EnvelopePhase::Decay;
+                        voice.phase_timer = 0.0;
+                    }
+                }
+                EnvelopePhase::Decay => {
+                    let decay_samples = (sample_rate * (params.decay / 1000.0)).max(1.0);
+                    let target = params.sustain;
+                    voice.envelope_value -= (1.0 - target) / decay_samples;
+
+                    if voice.envelope_value <= target {
+                        voice.envelope_value = target;
+                        if target <= 0.0 {
+                            voice.current_phase = EnvelopePhase::Idle;
+                        } else {
+                            voice.current_phase = EnvelopePhase::Sustain;
+                            voice.phase_timer = 0.0;
+                        }
+                    }
+                }
+                EnvelopePhase::Sustain => {
+                    voice.envelope_value = params.sustain;
+                }
+                EnvelopePhase::Release => {
+                    if voice.phase_timer == 0.0 {
+                        let release_ms = if voice.fast_release {
+                            5.0
+                        } else {
+                            params.release
+                        };
+                        let release_samples = (sample_rate * (release_ms / 1000.0)).max(1.0);
+                        voice.release_coeff = 0.0001f32.powf(1.0 / release_samples);
+                    }
+
+                    voice.envelope_value *= voice.release_coeff;
+                    voice.phase_timer += 1.0;
+
+                    if voice.envelope_value < 1e-6 {
+                        voice.envelope_value = 0.0;
+                        voice.current_phase = EnvelopePhase::Idle;
+                    }
+                }
+                _ => {}
+            }
+
+            // Pitch Envelope
+            let pitch_t = voice.pitch_env_timer / (sample_rate * (params.pitch_decay / 1000.0));
+            let pitch_env_val = if pitch_t < 1.0 {
+                (1.0 - pitch_t).powf(3.0)
+            } else {
+                0.0
+            };
+
+            let current_freq =
+                params.tune + (voice.analog_drift * params.analog_variation) + (params.sweep * pitch_env_val);
+            let phase_inc = current_freq / sample_rate;
+            voice.phase = (voice.phase + phase_inc).fract();
+
+            let sine_wave = (voice.phase * 2.0 * std::f32::consts::PI).sin();
+            let signal = sine_wave * voice.envelope_value;
+
+            // Texture Logic
+            let mut tex_signal = 0.0;
+            match voice.tex_env_phase {
+                EnvelopePhase::Decay => {
+                    let decay_samples = (sample_rate * (params.tex_decay / 1000.0)).max(1.0);
+                    voice.tex_env_value -= 1.0 / decay_samples;
+                    if voice.tex_env_value <= 0.0 {
+                        voice.tex_env_value = 0.0;
+                        voice.tex_env_phase = EnvelopePhase::Idle;
+                    }
+                }
+                EnvelopePhase::Release => {
+                    let release_samples = (sample_rate * (10.0 / 1000.0)).max(1.0); // 10ms release
+                    voice.tex_env_value -= 1.0 / release_samples;
+                    if voice.tex_env_value <= 0.0 {
+                        voice.tex_env_value = 0.0;
+                        voice.tex_env_phase = EnvelopePhase::Idle;
+                    }
+                }
+                _ => {}
+            }
+
+            if voice.tex_env_phase != EnvelopePhase::Idle && params.tex_amt > 0.0 {
+                voice.static_rng_state = voice
+                    .static_rng_state
+                    .wrapping_mul(1664525)
+                    .wrapping_add(1013904223);
+
+                let current_free_rng = free_rng_state.get();
+                free_rng_state
+                    .set(current_free_rng.wrapping_mul(1664525).wrapping_add(1013904223));
+
+                let static_val = (voice.static_rng_state as f32) / (u32::MAX as f32);
+                let free_val = (current_free_rng as f32) / (u32::MAX as f32);
+
+                let static_sym = static_val * 2.0 - 1.0;
+                let free_sym = free_val * 2.0 - 1.0;
+
+                let noise_val = match params.tex_type {
+                    1 => {
+                        let threshold = 0.999 - (params.tex_tone * 0.1);
+                        let static_dust = if static_val > threshold { static_sym } else { 0.0 };
+                        let free_dust = if free_val > threshold { free_sym } else { 0.0 };
+                        let raw_dust =
+                            static_dust * (1.0 - params.tex_variation) + free_dust * params.tex_variation;
+
+                        let cutoff = 8000.0 * (1.0 - params.tex_tone * 0.9);
+                        let dt = 1.0 / sample_rate;
+                        let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+                        let alpha = dt / (rc + dt);
+
+                        voice.tex_filter_state += alpha * (raw_dust - voice.tex_filter_state);
+                        voice.tex_filter_state * 3.0
+                    }
+                    2 => {
+                        let cutoff = 200.0 * 50.0_f32.powf(params.tex_tone);
+                        let dt = 1.0 / sample_rate;
+                        let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+                        let alpha = dt / (rc + dt);
+
+                        let eq_pwr_static = (1.0 - params.tex_variation).sqrt();
+                        let eq_pwr_free = params.tex_variation.sqrt();
+                        let combined_noise =
+                            static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+
+                        voice.tex_filter_state +=
+                            alpha * (combined_noise - voice.tex_filter_state);
+                        let shaped = voice.tex_filter_state
+                            * voice.tex_filter_state
+                            * voice.tex_filter_state
+                            * 10.0;
+                        shaped.clamp(-1.0, 1.0)
+                    }
+                    3 => {
+                        let mut t = voice.wt_phase * (sampled_noise.len() as f32);
+                        let playback_speed = 0.5 + params.tex_tone;
+
+                        voice.wt_phase += playback_speed / sample_rate;
+                        if voice.wt_phase >= 1.0 {
+                            voice.wt_phase -= 1.0;
+                        }
+                        if voice.wt_phase < 0.0 {
+                            voice.wt_phase += 1.0;
+                        }
+
+                        t = t.clamp(0.0, (sampled_noise.len() - 2) as f32);
+                        let idx1 = t as usize;
+                        let idx2 = idx1 + 1;
+                        let frac = t.fract();
+
+                        let s1 = sampled_noise[idx1];
+                        let s2 = sampled_noise[idx2];
+                        s1 + frac * (s2 - s1)
+                    }
+                    4 => {
+                        let base_freq = 20.0 * 50.0_f32.powf(params.tex_tone);
+                        let eq_pwr_static = (1.0 - params.tex_variation).sqrt();
+                        let eq_pwr_free = params.tex_variation.sqrt();
+                        let combined_noise =
+                            static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+
+                        let freq = base_freq * (1.0 + 0.05 * combined_noise);
+                        let phase_inc = freq / sample_rate;
+                        voice.wt_phase = (voice.wt_phase + phase_inc).fract();
+
+                        let wt_len = wavetable.len() as f32;
+                        let idx = voice.wt_phase * wt_len;
+                        let idx_i = idx as usize;
+                        let idx_next = (idx_i + 1) % wavetable.len();
+                        let frac = idx.fract();
+
+                        let s1 = wavetable[idx_i];
+                        let s2 = wavetable[idx_next];
+                        s1 + frac * (s2 - s1)
+                    }
+                    5 => {
+                        let eq_pwr_static = (1.0 - params.tex_variation).sqrt();
+                        let eq_pwr_free = params.tex_variation.sqrt();
+                        let hiss_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+
+                        let mix_val = static_val * (1.0 - params.tex_variation) + free_val * params.tex_variation;
+                        let pop_threshold = 0.9995 - (params.tex_tone * 0.005);
+                        let pop = if mix_val > pop_threshold {
+                            1.5 * hiss_noise.signum()
+                        } else {
+                            0.0
+                        };
+
+                        let cutoff = 4000.0;
+                        let dt = 1.0 / sample_rate;
+                        let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
+                        let alpha = dt / (rc + dt);
+                        voice.tex_filter_state += alpha * (hiss_noise - voice.tex_filter_state);
+
+                        let noise = voice.tex_filter_state * 0.3 + pop;
+                        noise.clamp(-1.0, 1.0)
+                    }
+                    6 => {
+                        let freq = 1000.0 * 4.0_f32.powf(params.tex_tone);
+                        let mut mod_freq = freq * 0.5 * params.tex_variation;
+                        if params.tex_variation <= 0.0 {
+                            mod_freq = freq * 0.5;
+                        }
+
+                        let drift = (free_val - 0.5) * 200.0 * params.tex_variation;
+                        voice.tex_filter_state_2 = (voice.tex_filter_state_2
+                            + (mod_freq + drift) / sample_rate)
+                            .fract();
+                        let mo = (voice.tex_filter_state_2 * 2.0 * std::f32::consts::PI).sin();
+
+                        voice.wt_phase =
+                            (voice.wt_phase + (freq + mo * 1000.0) / sample_rate).fract();
+                        (voice.wt_phase * 2.0 * std::f32::consts::PI).sin() * 0.6
+                    }
+                    _ => 0.0,
+                };
+                tex_signal = noise_val * voice.tex_env_value * params.tex_amt * 0.4 * 0.7;
+            }
+
+            let vel_mult = voice.midi_velocity * (127.0 / 100.0);
+            let pre_drive = (signal + tex_signal) * vel_mult;
+
+            let driven_signal = match params.drive_model {
+                1 => Self::drive_tape_classic(params.drive, pre_drive) * 0.89125,
+                2 => Self::drive_tape_modern(params.drive, pre_drive) * 1.412,
+                3 => Self::drive_tube_triode(params.drive, pre_drive) * 0.917,
+                4 => Self::drive_tube_pentode(params.drive, pre_drive) * 0.79433,
+                5 => {
+                    let scaled_drive = params.drive * 0.59;
+                    Self::drive_saturation_digital(scaled_drive, pre_drive) * 0.729
+                }
+                _ => Self::drive_tape_classic(params.drive, pre_drive) * 0.89125,
+            };
+
+            let drive_wet = params.drive.sqrt();
+            let driven = pre_drive * (1.0 - drive_wet) + driven_signal * drive_wet;
+
+            let (corr_l, corr_r) = Self::apply_corrosion(
+                sample_rate,
+                driven,
+                params.corrosion_amount,
+                corrosion,
+                kick_params,
+            );
+
+            out_l = corr_l * voice.midi_velocity * 0.9;
+            out_r = corr_r * voice.midi_velocity * 0.9;
+
+            if voice.current_phase != EnvelopePhase::Idle {
+                voice.pitch_env_timer += 1.0;
+                voice.phase_timer += 1.0;
+            }
+        }
+        (out_l, out_r)
+    }
+
     fn trigger_note(&mut self, velocity: f32) {
-        self.midi_velocity = velocity;
-        self.current_phase = EnvelopePhase::Attack;
-        self.phase_timer = 0.0;
-        self.pitch_env_timer = 0.0;
-        self.phase = 0.0; // Start at 0-crossing
-        self.envelope_value = 0.0;
+        if self.voice.current_phase != EnvelopePhase::Idle {
+            let mut releasing = self.voice.clone();
+            releasing.current_phase = EnvelopePhase::Release;
+            if releasing.tex_env_phase != EnvelopePhase::Idle {
+                releasing.tex_env_phase = EnvelopePhase::Release;
+            }
+            releasing.phase_timer = 0.0;
+            releasing.fast_release = true;
+            self.releasing_voice = Some(releasing);
+        }
 
-        // Advance RNG state for analog drift so we always get a new pitch offset
-        // regardless of whether texture generation is active.
-        self.free_rng_state = self
-            .free_rng_state
-            .wrapping_mul(1664525)
-            .wrapping_add(1013904223);
+        self.voice = VoiceState::default();
+        self.voice.midi_velocity = velocity;
+        self.voice.current_phase = EnvelopePhase::Attack;
 
-        // Calculate analog drift for this hit
-        self.analog_drift = ((self.free_rng_state as f32 / u32::MAX as f32) * 2.0 - 1.0) * 1.5; // +/- 1.5 Hz
+        let current_rng = self.free_rng_state.get();
+        let next_rng = current_rng.wrapping_mul(1664525).wrapping_add(1013904223);
+        self.free_rng_state.set(next_rng);
 
-        self.tex_env_phase = EnvelopePhase::Decay;
-        self.tex_env_value = 1.0;
-        self.wt_phase = 0.0;
-        self.static_rng_state = 1337;
-        self.tex_release_early = false;
+        self.voice.analog_drift = ((next_rng as f32 / u32::MAX as f32) * 2.0 - 1.0) * 1.5;
+
+        self.voice.tex_env_phase = EnvelopePhase::Decay;
+        self.voice.tex_env_value = 1.0;
     }
 
     fn release_note(&mut self) {
-        if self.current_phase != EnvelopePhase::Idle && self.current_phase != EnvelopePhase::Release
+        if self.voice.current_phase != EnvelopePhase::Idle && self.voice.current_phase != EnvelopePhase::Release
         {
-            self.current_phase = EnvelopePhase::Release;
-            self.phase_timer = 0.0;
+            self.voice.current_phase = EnvelopePhase::Release;
+            self.voice.phase_timer = 0.0;
+            self.voice.fast_release = false;
+        }
+        if self.voice.tex_env_phase != EnvelopePhase::Idle && self.voice.tex_env_phase != EnvelopePhase::Release {
+            self.voice.tex_env_phase = EnvelopePhase::Release;
         }
     }
 
-    // Tape Saturation Type 1: Classic Analog Tape (Soft Knee)
-    // Models vintage tape machines with smooth, musical saturation and hysteresis-like behavior
     fn drive_tape_classic(drive: f32, signal: f32) -> f32 {
         let gain = 1.0 + drive * 12.0;
         let x = signal * gain;
-
-        // Soft saturation curve with tape-like compression
         let saturated = if x.abs() < 0.5 {
             x * (1.0 - 0.15 * x.abs())
         } else {
             let sign = x.signum();
             sign * (0.425 + 0.575 * (1.0 - (-(x.abs() - 0.5) * 3.0).exp()))
         };
-
-        // Apply gentle high-frequency rolloff simulation
         saturated * 0.85
     }
 
-    // Tape Saturation Type 2: Modern High-Bias Tape (Asymmetric)
-    // Models modern tape with asymmetric clipping and warmth
     fn drive_tape_modern(drive: f32, signal: f32) -> f32 {
         let gain = 1.0 + drive * 10.0;
         let x = signal * gain;
-
-        // Asymmetric tape saturation (positive/negative behave differently)
         let saturated = if x >= 0.0 {
-            // Positive: harder saturation
             x / (1.0 + x.abs().powf(1.4))
         } else {
-            // Negative: softer saturation
             x / (1.0 + (x.abs() * 0.85).powf(1.2))
         };
-
         saturated * 0.9
     }
 
-    // Tube Saturation Type 1: Triode Tube (Warm, Musical)
-    // Models classic triode tube stages with even/odd harmonics
     fn drive_tube_triode(drive: f32, signal: f32) -> f32 {
         let gain = 1.0 + drive * 15.0;
         let x = signal * gain;
-
-        // Triode-style transfer curve with crossover distortion
         let saturated = if x.abs() < 0.1 {
-            x * 0.95 // Slight deadzone for tube character
+            x * 0.95
         } else {
-            // Soft tube saturation using tanh for guaranteed bounding
             let sign = x.signum();
             let abs_x = x.abs();
             let mapped = (abs_x - 0.1) * 1.5;
             sign * (0.095 + mapped.tanh() * 0.905)
         };
-
-        // Output scaling with tube warmth
         saturated * 0.75
     }
 
-    // Tube Saturation Type 2: Pentode/Power Tube (Aggressive)
-    // Models power tube stages with harder clipping and compression
     fn drive_tube_pentode(drive: f32, signal: f32) -> f32 {
         let gain = 1.0 + drive * 18.0;
         let x = signal * gain;
-
-        // Power tube saturation with grid clipping simulation
         let saturated = if x.abs() < 0.3 {
             x
         } else {
-            // Bounded hard limit transition using atan for stability
             let sign = x.signum();
             let abs_x = x.abs();
             let mapped = (abs_x - 0.3) * 2.0;
             sign * (0.3 + mapped.atan() * (0.7 / std::f32::consts::FRAC_PI_2))
         };
-
         saturated * 0.7
     }
 
-    // Digital Saturation: Modern Clipper with Oversampling Simulation
-    // Clean, transparent saturation with minimal aliasing artifacts
     fn drive_saturation_digital(drive: f32, signal: f32) -> f32 {
         let gain = 1.0 + drive * 20.0;
         let x = signal * gain;
-
-        // Quintic polynomial approximation (C2 continuous)
         let saturated = if x.abs() <= 1.0 {
             x * (1.5 - 0.5 * x.abs().powf(2.0))
         } else {
             x.signum()
         };
-
-        // Apply soft knee at threshold
         let threshold = 0.8;
         let final_signal = if saturated.abs() > threshold {
             let sign = saturated.signum();
@@ -1144,27 +1097,97 @@ impl KickSynth {
         } else {
             saturated
         };
-
         final_signal * 0.8
     }
 
-    /// Fractional delay buffer reader using linear interpolation.
-    /// `buf` is a circular delay buffer, `write_pos` is the current write head,
-    /// `delay_samples` is the number of samples to look back (may be fractional).
     fn corrosion_read(buf: &[f32], write_pos: usize, delay_samples: f32) -> f32 {
         let len = buf.len();
         let delay_i = delay_samples as usize;
         let frac = delay_samples - delay_i as f32;
-
-        // Clamp so we never exceed the buffer length
         let delay_i = delay_i.min(len - 1);
-
-        // Read head (going backward from the write position)
         let idx0 = (write_pos + len - delay_i) % len;
         let idx1 = (write_pos + len - delay_i - 1) % len;
-
-        // Linear interpolation between the two adjacent samples
         buf[idx0] + frac * (buf[idx1] - buf[idx0])
+    }
+
+    fn apply_corrosion(
+        sample_rate: f32,
+        driven: f32,
+        corr_amount: f32,
+        corrosion: &RefCell<CorrosionState>,
+        kick_params: &Arc<KickParams>,
+    ) -> (f32, f32) {
+        if corr_amount > 0.0 {
+            let corr_freq_norm = kick_params.corrosion_frequency.smoothed.next();
+            let corr_freq = log_scale(corr_freq_norm, 15.0, 22000.0);
+            let corr_width = kick_params.corrosion_width.smoothed.next();
+            let corr_blend = kick_params.corrosion_noise_blend.smoothed.next();
+            let corr_stereo = kick_params.corrosion_stereo.smoothed.next();
+
+            const BASE_DELAY: f32 = 0.002;
+            const MAX_MOD_DEPTH: f32 = 0.001;
+
+            let delay_samples_l;
+            let delay_samples_r;
+            let write_pos;
+
+            {
+                let mut state = corrosion.borrow_mut();
+
+                let sine_l = (state.sine_phase * std::f32::consts::TAU).sin();
+                let sine_r =
+                    ((state.sine_phase * std::f32::consts::TAU) + corr_stereo * std::f32::consts::PI)
+                        .sin();
+                state.sine_phase = (state.sine_phase + corr_freq / sample_rate).fract();
+
+                state.rng = state.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let raw_noise_l = (state.rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
+                state.rng = state.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                let raw_noise_r = (state.rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
+
+                let lp_cutoff = (corr_freq * corr_width.max(0.01)).min(sample_rate * 0.499);
+                let hp_cutoff = (corr_freq / corr_width.max(0.01).max(1.0)).max(1.0);
+                let dt = 1.0 / sample_rate;
+                let lp_a = dt / (1.0 / (std::f32::consts::TAU * lp_cutoff) + dt);
+                let hp_a = dt / (1.0 / (std::f32::consts::TAU * hp_cutoff) + dt);
+
+                state.bp_l[0] += lp_a * (raw_noise_l - state.bp_l[0]);
+                let lp_l = state.bp_l[0];
+                state.bp_l[1] += hp_a * (lp_l - state.bp_l[1]);
+                let bp_l = lp_l - state.bp_l[1];
+
+                state.bp_r[0] += lp_a * (raw_noise_r - state.bp_r[0]);
+                let lp_r = state.bp_r[0];
+                state.bp_r[1] += hp_a * (lp_r - state.bp_r[1]);
+                let bp_r = lp_r - state.bp_r[1];
+
+                let noise_l = bp_l;
+                let noise_r = noise_l + corr_stereo * (bp_r - noise_l);
+
+                let mod_l = sine_l + corr_blend * (noise_l - sine_l);
+                let mod_r = sine_r + corr_blend * (noise_r - sine_r);
+
+                delay_samples_l =
+                    (BASE_DELAY + mod_l * corr_amount * MAX_MOD_DEPTH).max(0.0) * sample_rate;
+                delay_samples_r =
+                    (BASE_DELAY + mod_r * corr_amount * MAX_MOD_DEPTH).max(0.0) * sample_rate;
+
+                write_pos = state.write;
+                let buf_len = state.buf_l.len();
+                state.buf_l[write_pos] = driven;
+                state.buf_r[write_pos] = driven;
+
+                state.write = (write_pos + 1) % buf_len;
+            }
+
+            let state = corrosion.borrow();
+            let read_l = Self::corrosion_read(&state.buf_l, write_pos, delay_samples_l);
+            let read_r = Self::corrosion_read(&state.buf_r, write_pos, delay_samples_r);
+
+            (read_l, read_r)
+        } else {
+            (driven, driven)
+        }
     }
 }
 
@@ -1185,7 +1208,6 @@ fn update_peak_meters(
 
     let block_decay = f32::powf(meter_decay_per_sample, buffer_samples);
 
-    // Update left meter
     let current_peak_l = peak_meter_l.load(Ordering::Relaxed);
     let mut new_peak_l = if max_amplitude_l > current_peak_l {
         max_amplitude_l
@@ -1197,7 +1219,6 @@ fn update_peak_meters(
     }
     peak_meter_l.store(new_peak_l, Ordering::Relaxed);
 
-    // Update right meter
     let current_peak_r = peak_meter_r.load(Ordering::Relaxed);
     let mut new_peak_r = if max_amplitude_r > current_peak_r {
         max_amplitude_r
