@@ -14,6 +14,7 @@ use crate::presets::{self, Preset};
 use crate::KickParams;
 use std::fs::File;
 use std::io::{Read, Write};
+use std::path::PathBuf;
 
 mod my_peak_meter;
 mod param_knob;
@@ -30,7 +31,6 @@ const BG_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/kick_background_ti
 const POTI_3_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/poti_3_fixed_small.png");
 const INSTA_ICON_BYTES: &[u8] = include_bytes!("resource/images/instagram_icon.png");
 const SPOTIFY_ICON_BYTES: &[u8] = include_bytes!("resource/images/spotify_icon.png");
-
 
 #[derive(Lens)]
 struct Data {
@@ -50,10 +50,15 @@ impl Model for Data {
                 emit_params_events(cx, &self.params, preset);
             }
             PresetEvent::SaveToFile => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("JSON", &["json"])
-                    .save_file()
-                {
+                cx.spawn(|cxp| {
+                    let path = rfd::FileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .save_file();
+                    let _ = cxp.emit(PresetEvent::SaveToFileResult(path));
+                });
+            }
+            PresetEvent::SaveToFileResult(path) => {
+                if let Some(path) = path {
                     let preset = self.params.get_current_preset();
                     match serde_json::to_string_pretty(&preset) {
                         Ok(json) => {
@@ -66,10 +71,15 @@ impl Model for Data {
                 }
             }
             PresetEvent::LoadFromFile => {
-                if let Some(path) = rfd::FileDialog::new()
-                    .add_filter("JSON", &["json"])
-                    .pick_file()
-                {
+                cx.spawn(|cxp| {
+                    let path = rfd::FileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .pick_file();
+                    let _ = cxp.emit(PresetEvent::LoadFromFileResult(path));
+                });
+            }
+            PresetEvent::LoadFromFileResult(path) => {
+                if let Some(path) = path {
                     match File::open(path) {
                         Ok(mut file) => {
                             let mut json = String::new();
@@ -93,7 +103,9 @@ impl Model for Data {
 pub enum PresetEvent {
     LoadFactory(usize),
     SaveToFile,
+    SaveToFileResult(Option<PathBuf>),
     LoadFromFile,
+    LoadFromFileResult(Option<PathBuf>),
 }
 
 fn emit_params_events(cx: &mut EventContext, params: &Arc<KickParams>, preset: &Preset) {
@@ -133,7 +145,11 @@ fn emit_params_events(cx: &mut EventContext, params: &Arc<KickParams>, preset: &
     emit(cx, &params.release, preset.release);
     emit(cx, &params.corrosion_frequency, preset.corrosion_frequency);
     emit(cx, &params.corrosion_width, preset.corrosion_width);
-    emit(cx, &params.corrosion_noise_blend, preset.corrosion_noise_blend);
+    emit(
+        cx,
+        &params.corrosion_noise_blend,
+        preset.corrosion_noise_blend,
+    );
     emit(cx, &params.corrosion_stereo, preset.corrosion_stereo);
     emit(cx, &params.corrosion_amount, preset.corrosion_amount);
     emit(cx, &params.bass_synth_mode, preset.bass_synth_mode);
@@ -199,7 +215,6 @@ pub(crate) fn create(
             VStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
                     Label::new(cx, "CONVOLUTION'S Kick Synth").class("header-title");
-                    build_preset_header(cx);
                 })
                 .width(Stretch(1.0))
                 .height(Stretch(0.1))
@@ -359,11 +374,13 @@ fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
         VStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
 
-                Label::new(cx, "v0.1.0").class("header-version-title")
-                    .height(Stretch(1.0))
-                    .left(Stretch(1.0))
-                    .right(Stretch(1.0))
-                    // .width(Stretch(0.5))
+                build_preset_header(cx);
+
+                Label::new(cx, "v0.2.0").class("header-version-title")
+                    .height(Stretch(0.5))
+                    .width(Stretch(0.2))
+                    .left(Stretch(0.2))
+                    .right(Stretch(0.2))
                     .child_space(Stretch(1.0));
 
                 Label::new(cx, "Check for Updates")
@@ -400,7 +417,9 @@ fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
                     .child_bottom(Stretch(0.01))
                     .class("link-section");
 
-            }).height(Stretch(0.6));
+            })
+                .row_between(Pixels(15.0))
+                .height(Stretch(0.6));
 
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
@@ -666,8 +685,8 @@ fn build_nam_triangle(cx: &mut Context) {
 
             // BOTTOM ROW: Input and Output Gain
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0)
-                    .on_change(|cx, val| {
+                SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0).on_change(
+                    |cx, val| {
                         // Link inversely: 1.0 - val
                         let linked_val = 1.0 - val;
                         cx.emit(ParamEvent::<FloatParam>::BeginSetParameter(unsafe {
@@ -690,10 +709,11 @@ fn build_nam_triangle(cx: &mut Context) {
                         cx.emit(RawParamEvent::EndSetParameter(
                             Data::params.get(cx).nam_output_gain.as_ptr(),
                         ));
-                    });
+                    },
+                );
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.nam_output_gain, false, 85.0)
-                    .on_change(|cx, val| {
+                SingleKnob::new(cx, Data::params, |p| &p.nam_output_gain, false, 85.0).on_change(
+                    |cx, val| {
                         // Link inversely: 1.0 - val
                         let linked_val = 1.0 - val;
                         cx.emit(ParamEvent::<FloatParam>::BeginSetParameter(unsafe {
@@ -716,7 +736,8 @@ fn build_nam_triangle(cx: &mut Context) {
                         cx.emit(RawParamEvent::EndSetParameter(
                             Data::params.get(cx).nam_input_gain.as_ptr(),
                         ));
-                    });
+                    },
+                );
             });
         })
         .class("orange")
@@ -864,14 +885,18 @@ fn build_preset_header(cx: &mut Context) {
         .width(Pixels(200.0))
         .class("preset-dropdown");
 
-        Button::new(cx, |cx| cx.emit(PresetEvent::SaveToFile), |cx| {
-            Label::new(cx, "Save")
-        })
+        Button::new(
+            cx,
+            |cx| cx.emit(PresetEvent::SaveToFile),
+            |cx| Label::new(cx, "Save"),
+        )
         .class("preset-button");
 
-        Button::new(cx, |cx| cx.emit(PresetEvent::LoadFromFile), |cx| {
-            Label::new(cx, "Load")
-        })
+        Button::new(
+            cx,
+            |cx| cx.emit(PresetEvent::LoadFromFile),
+            |cx| Label::new(cx, "Load"),
+        )
         .class("preset-button");
     })
     .child_space(Stretch(1.0))

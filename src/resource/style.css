@@ -76,7 +76,7 @@
     background-color: #614963;
 
     color: #c6a863;
-    font-size: 25.0;
+    font-size: 20.0;
     font-weight: bold;
     font-family: "Comfortaa";
 }
@@ -465,4 +465,52 @@
 .preset-button:active {
     background-color: #c6a863;
     color: #74355C;
+}
+
+/* PickList Styling */
+
+picklist {
+    background-color: rgba(0, 0, 0, 0.47);
+    border-color: #c6a863;
+    border-width: 1px;
+    border-radius: 4px;
+    color: #c6a863;
+    child-space: 10px;
+    font-family: "Comfortaa";
+    font-size: 14.0;
+    min-height: 30px;
+}
+
+picklist:hover {
+    border-color: #ef3939;
+    background-color: rgba(0, 0, 0, 0.6);
+}
+
+picklist .icon {
+    color: #c6a863;
+}
+
+picklist popup {
+    background-color: #2a2a2a;
+    border-color: #c6a863;
+    border-width: 1px;
+    border-radius: 4px;
+    child-space: 5px;
+}
+
+picklist popup label {
+    color: #e6c372;
+    font-family: "Comfortaa";
+    child-left: 5px;
+    child-right: 5px;
+}
+
+picklist popup label:hover {
+    background-color: #74355C;
+    color: #f18383;
+}
+
+picklist popup label:checked {
+    background-color: #512540;
+    color: #c6a863;
 }

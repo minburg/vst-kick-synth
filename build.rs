@@ -59,4 +59,25 @@ fn main() {
         println!("cargo:rerun-if-changed=src/cpp/nam_wrapper.h");
         println!("cargo:rerun-if-changed=NeuralAmpModelerCore/NAM");
     }
+
+    // Generate presets inclusion file
+    let presets_dir = PathBuf::from("src").join("resource").join("presets");
+    let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
+    let mut generated_code = String::from("pub static PRESET_JSONS: &[&str] = &[\n");
+
+    if let Ok(entries) = std::fs::read_dir(&presets_dir) {
+        let mut entries: Vec<_> = entries.flatten().collect();
+        entries.sort_by_key(|e| e.path());
+        for entry in entries {
+            let path = entry.path();
+            if path.extension().and_then(|s| s.to_str()) == Some("json") {
+                let absolute_path = std::fs::canonicalize(&path).unwrap();
+                let path_str = absolute_path.to_str().unwrap().replace("\\", "/");
+                generated_code.push_str(&format!("    include_str!(\"{}\"),\n", path_str));
+            }
+        }
+    }
+    generated_code.push_str("];\n");
+    std::fs::write(out_dir.join("presets_generated.rs"), generated_code).unwrap();
+    println!("cargo:rerun-if-changed=src/resource/presets");
 }
