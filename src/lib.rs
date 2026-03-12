@@ -292,12 +292,12 @@ impl Default for KickParams {
                 _ => "Unknown".to_string(),
             })),
 
-            tex_amt: FloatParam::new("Tex Amount", 0.2, FloatRange::Linear { min: 0.0, max: 1.0 })
+            tex_amt: FloatParam::new("Amount", 0.2, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             tex_decay: FloatParam::new(
-                "Tex Decay",
+                "Decay",
                 80.0,
                 FloatRange::Linear {
                     min: 5.0,
@@ -307,7 +307,7 @@ impl Default for KickParams {
             .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
 
             tex_variation: FloatParam::new(
-                "Tex Variation",
+                "Variation",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -315,7 +315,7 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             analog_variation: FloatParam::new(
-                "Analog Instability",
+                "Instability",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -323,7 +323,7 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             tex_type: IntParam::new(
-                "Tex Type",
+                "Type",
                 1i32,
                 IntRange::Linear {
                     min: 1i32,
@@ -340,7 +340,7 @@ impl Default for KickParams {
                 _ => "Unknown".to_string(),
             })),
 
-            tex_tone: FloatParam::new("Tex Tone", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
+            tex_tone: FloatParam::new("Tone", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             attack: FloatParam::new(
@@ -377,7 +377,7 @@ impl Default for KickParams {
             .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
 
             corrosion_frequency: FloatParam::new(
-                "Corrosion Freq",
+                "Freq",
                 0.5, // Default to a middle value in the normalized range
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -386,14 +386,14 @@ impl Default for KickParams {
             })),
 
             corrosion_width: FloatParam::new(
-                "Corrosion Width",
+                "Width",
                 0.5,
                 FloatRange::Linear { min: 0.1, max: 2.5 },
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.1}", value))),
 
             corrosion_noise_blend: FloatParam::new(
-                "Corrosion Sine ~ Noise",
+                "Sine ~ Noise",
                 1.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -401,7 +401,7 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             corrosion_stereo: FloatParam::new(
-                "Corrosion Stereo",
+                "Stereo",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -409,7 +409,7 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             corrosion_amount: FloatParam::new(
-                "Corrosion Amount",
+                "Amount",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -419,7 +419,7 @@ impl Default for KickParams {
             trigger: BoolParam::new("Trigger", false),
 
             nam_input_gain: FloatParam::new(
-                "NAM Input Gain",
+                "Input Gain",
                 0.0,
                 FloatRange::Linear { min: -18.0, max: 18.0 },
             )
@@ -427,14 +427,14 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
 
             nam_output_gain: FloatParam::new(
-                "NAM Output Gain",
+                "Output Gain",
                 0.0,
                 FloatRange::Linear { min: -18.0, max: 18.0 },
             )
             .with_unit("dB")
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
 
-            nam_model: EnumParam::new("NAM Model", NamModel::PhilipsEL3541D),
+            nam_model: EnumParam::new("Model", NamModel::PhilipsEL3541D),
             nam_is_loaded: AtomicBool::new(false),
             nam_status_text: Arc::new(RwLock::new(String::from("No model loaded"))),
         }

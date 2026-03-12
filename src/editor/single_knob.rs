@@ -37,13 +37,15 @@ impl SingleKnob {
             cx,
             ParamWidgetBase::build_view(params, params_to_param, move |cx, param_data| {
                 VStack::new(cx, |cx| {
+                    // TOP LABEL
                     Label::new(
                         cx,
                         params.map(move |params| params_to_param(params).name().to_owned()),
                     )
-                    .space(Stretch(1.0))
+                    // Removed .space(Stretch(1.0)) so it doesn't float away
                     .class("single-knob-label");
 
+                    // THE KNOB
                     Knob::custom(
                         cx,
                         param_data.param().default_normalized_value(),
@@ -51,27 +53,29 @@ impl SingleKnob {
                             params_to_param(params).unmodulated_normalized_value()
                         }),
                         move |cx, lens| {
-                            // A ZStack allows you to layer a "hit area" background and the visual arc
                             ZStack::new(cx, |cx| {
-                                // Transparent "Hit Surface" to capture mouse everywhere
+                                // Transparent "Hit Surface"
                                 Element::new(cx)
-                                    .width(Pixels(size))
-                                    .height(Pixels(size))
+                                    .width(Stretch(1.0)) // Fills the parent Knob
+                                    .height(Stretch(1.0))
+                                    .border_radius(Pixels(size / 2.0))
                                     .class("single-knob-hitbox");
 
                                 // Vintage Knob Image
-                                // This element replaces the arc. Define the image in CSS using the .vintage-knob class.
                                 Element::new(cx)
                                     .class("vintage-knob")
-                                    .width(Pixels(size))
-                                    .height(Pixels(size))
-                                    // Rotate from -150 deg (at 0.0) to 150 deg (at 1.0)
+                                    .width(Stretch(1.0)) // Fills the parent Knob
+                                    .height(Stretch(1.0))
+                                    .border_radius(Pixels(size / 2.0))
                                     .rotate(lens.map(|val| Angle::Deg(val * 300.0 - 18.0)));
                             })
-                            .child_space(Stretch(1.0))
                         },
                     )
-                    .space(Stretch(5.0))
+                    .border_radius(Pixels(size / 2.0))
+                    // Move the explicit pixel sizing to the Knob widget itself!
+                    .width(Pixels(size))
+                    .height(Pixels(size))
+                    // Removed .space(Stretch(5.0))
                     .on_mouse_down(move |cx, _button| {
                         cx.emit(SingleKnobEvent::BeginSetParam);
                     })
@@ -82,6 +86,7 @@ impl SingleKnob {
                         cx.emit(SingleKnobEvent::EndSetParam);
                     });
 
+                    // BOTTOM LABEL
                     Label::new(
                         cx,
                         params.map(move |params| {
@@ -95,10 +100,14 @@ impl SingleKnob {
                                 .to_owned()
                         }),
                     )
-                    .space(Stretch(1.0))
+                    // Removed .space(Stretch(1.0))
                     .class("single-knob-label");
                 })
-                .child_space(Stretch(1.0));
+                .class("single-knob-container")
+                // child_space(Stretch(1.0)) acts as a master centering spring for the tightly packed group
+                .child_space(Stretch(1.0))
+                // Adds a fixed, predictable pixel gap between the top label, the knob, and the bottom label
+                .row_between(Pixels(4.0));
             }),
         )
     }

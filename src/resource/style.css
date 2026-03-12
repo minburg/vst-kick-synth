@@ -4,6 +4,10 @@
     background-size: cover;
 }
 
+.main-gui-transparent {
+    background-color: rgba(0, 0, 0, 0.58);
+}
+
 .knob-section {
     background-color: rgba(40, 12, 85, 0);
     /*child-space: 50px;*/
@@ -63,7 +67,7 @@
     background-color: #614963;
 
     color: #c6a863;
-    font-size: 55.0;
+    font-size: 45.0;
     font-weight: bold;
     font-family: "Comfortaa";
 }
@@ -108,12 +112,34 @@
     color: #c6a863;
     font-size: 28.0;
     font-family: "Orbitron";
+    background-color: rgba(0, 0, 0, 0.47);
+}
+
+.pentagon-label {
+    color: #c6a863;
+    font-size: 28.0;
+    font-family: "Orbitron";
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.adsr-label {
+    color: #c6a863;
+    font-size: 22.0;
+    font-family: "Comfortaa";
 }
 
 .single-knob-label {
     color: #c6a863;
-    font-size: 18.0;
+    font-size: 16.0;
     font-family: "Comfortaa";
+}
+
+.single-knob-container {
+    background-color: rgba(0, 0, 0, 0);
+}
+
+.large-center-knob {
+    background-color: rgba(0, 0, 0, 0.47);
 }
 
 .single-knob-arc {
@@ -122,8 +148,8 @@
 }
 
 .single-knob-hitbox {
-    background-color: rgba(220, 81, 81, 0);
-    border-radius: 50%;
+    background-color: rgba(255, 52, 52, 0);
+    /*border-radius: 50%;*/
 }
 
 .vintage-knob {
@@ -147,6 +173,55 @@
     border-radius: 8px;
     border-width: 3px;
     border-color: rgba(0, 0, 0, 0.7);
+}
+
+.zone-source {
+    background-color: rgba(230, 117, 255, 0);
+    border-radius: 15px;
+    border-width: 3px;
+    border-color: rgba(69, 69, 69, 0);
+}
+
+.zone-body {
+    background-color: rgba(230, 117, 255, 0);
+    border-radius: 15px;
+    border-width: 3px;
+    border-color: rgba(69, 69, 69, 0);
+}
+
+.zone-mangle {
+    background-color: rgba(230, 117, 255, 0);
+    border-radius: 15px;
+    border-width: 3px;
+    border-color: rgba(69, 69, 69, 0);
+}
+
+.red {
+    background-color: rgba(0, 0, 0, 0);
+    border-radius: 8px;
+    border-width: 3px;
+    border-color: rgba(198, 168, 99, 0);
+}
+
+.blue {
+    background-color: rgba(0, 0, 0, 0);
+    border-radius: 8px;
+    border-width: 3px;
+    border-color: rgba(198, 168, 99, 0);
+}
+
+.green {
+    background-color: rgba(161, 86, 86, 0);
+    border-radius: 8px;
+    border-width: 3px;
+    border-color: rgba(198, 168, 99, 0);
+}
+
+.orange {
+    background-color: rgba(0, 0, 0, 0);
+    border-radius: 8px;
+    border-width: 3px;
+    border-color: rgba(198, 168, 99, 0);
 }
 
 .update-link {

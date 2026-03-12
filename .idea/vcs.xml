@@ -2,5 +2,9 @@
 <project version="4">
   <component name="VcsDirectoryMappings">
     <mapping directory="" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/NeuralAmpModelerCore" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/NeuralAmpModelerCore/Dependencies/AudioDSPTools" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/NeuralAmpModelerCore/Dependencies/AudioDSPTools/Dependencies/eigen" vcs="Git" />
+    <mapping directory="$PROJECT_DIR$/NeuralAmpModelerCore/Dependencies/eigen" vcs="Git" />
   </component>
 </project>

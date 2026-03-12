@@ -1,4 +1,5 @@
 use crate::editor::single_knob::SingleKnob;
+use crate::util::gain_to_db;
 use nih_plug::prelude::*;
 use nih_plug_vizia::assets::register_noto_sans_light;
 use nih_plug_vizia::vizia::image::load_from_memory;
@@ -88,33 +89,61 @@ pub(crate) fn create(
 
         // --------------------------------------------------------------------------------------------------------------- UI
 
-        HStack::new(cx, |cx| {
-            // ZONE 1: THE SOURCE (Generators)
+        VStack::new(cx, |cx| {
             VStack::new(cx, |cx| {
-                build_pitch_core_diamond(cx);
-                build_texture_satellite(cx);
-            })
-            .width(Stretch(1.0))
-            .class("zone-source");
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "CONVOLUTION'S Kick Synth").class("header-title");
+                })
+                .width(Stretch(1.0))
+                .height(Stretch(0.1))
+                .row_between(Pixels(10.0))
+                .child_space(Stretch(1.0))
+                .class("title-section");
 
-            // ZONE 2: THE BODY (Amp Envelope)
-            VStack::new(cx, |cx| {
-                build_amp_envelope_sliders(cx);
-            })
-            .width(Stretch(1.0))
-            .class("zone-body");
+                HStack::new(cx, |cx| {
+                    VStack::new(cx, |cx| {})
+                        .width(Stretch(0.1))
+                        .class("zone-source");
 
-            // ZONE 3: THE MANGLE (Destruction)
-            VStack::new(cx, |cx| {
-                build_drive_pill(cx);
-                build_corrosion_pentagon(cx);
-                build_nam_triangle(cx);
+                    // ZONE 1: THE SOURCE (Generators)
+                    VStack::new(cx, |cx| {
+                        build_pitch_core_diamond(cx);
+                        build_texture_pentagon(cx);
+                    })
+                    .width(Stretch(1.2))
+                    .class("zone-source");
+
+                    // ZONE 2: THE BODY (Amp Envelope)
+                    VStack::new(cx, |cx| {
+                        build_center_amp_env(&params, cx);
+                    })
+                    .width(Stretch(1.0))
+                    .class("zone-body");
+
+                    // ZONE 3: THE MANGLE (Destruction)
+                    VStack::new(cx, |cx| {
+                        build_drive_pill(cx);
+                        build_corrosion_pentagon(cx);
+                        build_nam_triangle(cx);
+                    })
+                    .width(Stretch(1.2))
+                    .class("zone-mangle");
+
+                    VStack::new(cx, |cx| {})
+                        .width(Stretch(0.1))
+                        .class("zone-source");
+                })
+                .width(Stretch(1.0))
+                .height(Stretch(0.9));
             })
             .width(Stretch(1.0))
-            .class("zone-mangle");
+            .height(Stretch(1.0))
+            .class("main-gui-transparent");
         })
         .width(Stretch(1.0))
-        .height(Stretch(1.0));
+        .height(Stretch(1.0))
+        .class("main-gui");
+
         // .class("main-gui");
 
         // VStack::new(cx, |cx| {
@@ -317,144 +346,395 @@ pub(crate) fn create(
 }
 
 fn build_pitch_core_diamond(cx: &mut Context) {
-    // Inside your UI build function or a helper:
-    VStack::new(cx, |cx| {
-        // TOP ROW: Tune (Centered)
-        HStack::new(cx, |cx| {
-            Element::new(cx).width(Stretch(1.0)); // Invisible spring pushes right
-            SingleKnob::new(cx, Data::params, |p| &p.tune, false, 95.0);
-            Element::new(cx).width(Stretch(1.0)); // Invisible spring pushes left
-        });
+    ZStack::new(cx, |cx| {
+        // LAYER 1: The Label
+        Label::new(cx, "Core")
+            .top(Stretch(1.0))
+            .bottom(Stretch(1.0))
+            .left(Stretch(1.0))
+            .right(Stretch(1.0))
+            .width(Stretch(0.5))
+            .child_space(Stretch(1.0))
+            .class("pentagon-label");
 
-        // MIDDLE ROW: Drift & Decay (Pushed to edges)
-        HStack::new(cx, |cx| {
-            SingleKnob::new(cx, Data::params, |p| &p.analog_variation, false, 95.0);
-            Element::new(cx).width(Stretch(1.0)); // Spring in the middle pushes them apart
-            SingleKnob::new(cx, Data::params, |p| &p.pitch_decay, false, 95.0);
-        });
+        // Inside your UI build function or a helper:
+        VStack::new(cx, |cx| {
+            // TOP ROW: Tune (Centered)
+            HStack::new(cx, |cx| {
+                Element::new(cx).width(Stretch(1.0)); // Invisible spring pushes right
+                SingleKnob::new(cx, Data::params, |p| &p.tune, false, 85.0);
+                Element::new(cx).width(Stretch(1.0)); // Invisible spring pushes left
+            });
 
-        // BOTTOM ROW: Sweep (Centered)
-        HStack::new(cx, |cx| {
-            Element::new(cx).width(Stretch(1.0));
-            SingleKnob::new(cx, Data::params, |p| &p.sweep, false, 95.0);
-            Element::new(cx).width(Stretch(1.0));
-        });
+            // MIDDLE ROW: Drift & Decay (Pushed to edges)
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |p| &p.analog_variation, false, 85.0);
+                Element::new(cx).width(Stretch(1.0)); // Spring in the middle pushes them apart
+                SingleKnob::new(cx, Data::params, |p| &p.pitch_decay, false, 85.0);
+            });
+
+            // BOTTOM ROW: Sweep (Centered)
+            HStack::new(cx, |cx| {
+                Element::new(cx).width(Stretch(1.0));
+                SingleKnob::new(cx, Data::params, |p| &p.sweep, false, 85.0);
+                Element::new(cx).width(Stretch(1.0));
+            });
+        })
+        .class("red");
+        // .child_space(Stretch(1.0)); // Centers the whole block vertically if needed
     })
-    .child_space(Stretch(1.0)); // Centers the whole block vertically if needed
+    .top(Stretch(0.08))
+    .bottom(Stretch(0.08))
+    .left(Stretch(0.08))
+    .right(Stretch(0.08));
 }
 
-fn build_texture_satellite(cx: &mut Context) {
-    VStack::new(cx, |cx| {
-        // TOP ROW: Texture Type (12 o'clock)
-        HStack::new(cx, |cx| {
-            Element::new(cx).width(Stretch(1.0)); // Pushes right
-            SingleKnob::new(cx, Data::params, |p| &p.tex_type, false, 95.0);
-            Element::new(cx).width(Stretch(1.0)); // Pushes left
-        });
+fn build_texture_pentagon(cx: &mut Context) {
+    ZStack::new(cx, |cx| {
+        // LAYER 1: The Label
+        Label::new(cx, "Texture")
+            .top(Stretch(0.1))
+            .bottom(Stretch(0.9))
+            .left(Stretch(0.5))
+            .right(Stretch(0.5))
+            .width(Stretch(0.5))
+            .child_space(Stretch(1.0))
+            .class("pentagon-label");
 
-        // MIDDLE ROW: Variation (9 o'clock), Amount (Center), Tone (3 o'clock)
-        HStack::new(cx, |cx| {
-            SingleKnob::new(cx, Data::params, |p| &p.tex_variation, false, 95.0);
+        // LAYER 2: The Grid (4 Corners)
+        VStack::new(cx, |cx| {
+            // TOP ROW: Tex Type (Top-Left) and Variation (Top-Right)
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |p| &p.tex_type, false, 85.0);
 
-            Element::new(cx).width(Stretch(1.0)); // Space between Variation and Center
+                // This spring sits between the knobs, pushing them to the far left and right edges
+                Element::new(cx).width(Stretch(1.0));
 
-            // This is the core parameter, maybe give it a CSS class to make it bigger!
-            SingleKnob::new(cx, Data::params, |p| &p.tex_amt, false, 150.0).class("large-center-knob");
+                SingleKnob::new(cx, Data::params, |p| &p.tex_variation, false, 85.0);
+            });
 
-            Element::new(cx).width(Stretch(1.0)); // Space between Center and Tone
+            // MIDDLE ROW: An empty vertical spring to push the top and bottom rows apart
+            Element::new(cx).height(Stretch(1.0));
 
-            SingleKnob::new(cx, Data::params, |p| &p.tex_tone, false, 95.0);
-        });
+            // BOTTOM ROW: Tex Tone (Bottom-Left) and Tex Decay (Bottom-Right)
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |p| &p.tex_tone, false, 85.0);
 
-        // BOTTOM ROW: Texture Decay (6 o'clock)
-        HStack::new(cx, |cx| {
-            Element::new(cx).width(Stretch(1.0));
-            SingleKnob::new(cx, Data::params, |p| &p.tex_decay, false, 95.0);
-            Element::new(cx).width(Stretch(1.0));
-        });
+                // Another spring in the middle pushing these to the bottom corners
+                Element::new(cx).width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |p| &p.tex_decay, false, 85.0);
+            });
+        })
+        .height(Stretch(1.0))
+        .class("orange");
+
+        // LAYER 3: The Giant Center Knob (Foreground)
+        // By making it a direct child of the ZStack, it overlaps the VStack without expanding its rows
+        SingleKnob::new(cx, Data::params, |p| &p.tex_amt, false, 180.0)
+            .class("large-center-knob")
+            // Apply equal springs to all sides to perfectly center it within the ZStack
+            .top(Stretch(1.0))
+            .bottom(Stretch(1.0))
+            .left(Stretch(1.0))
+            .right(Stretch(1.0));
     })
-    .child_space(Stretch(1.0)); // Centers the entire satellite formation
+    .top(Stretch(0.04))
+    .bottom(Stretch(0.04))
+    .left(Stretch(0.04))
+    .right(Stretch(0.04));
 }
 
-fn build_amp_envelope_sliders(cx: &mut Context) {
-    HStack::new(cx, |cx| {
-        VerticalParamSlider::new(cx, Data::params, |p| &p.attack).width(Stretch(0.5));
+fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
+    ZStack::new(cx, |cx| {
+        VStack::new(cx, |cx| {
+            VStack::new(cx, |cx| {
 
-        VerticalParamSlider::new(cx, Data::params, |p| &p.decay).width(Stretch(0.5));
+                Label::new(cx, "v0.1.0").class("header-version-title")
+                    .height(Stretch(1.0))
+                    .left(Stretch(1.0))
+                    .right(Stretch(1.0))
+                    // .width(Stretch(0.5))
+                    .child_space(Stretch(1.0));
 
-        VerticalParamSlider::new(cx, Data::params, |p| &p.sustain).width(Stretch(0.5));
+                Label::new(cx, "Check for Updates")
+                    .class("update-link")
+                    .on_press(|_| {
+                        if let Err(e) = webbrowser::open("https://github.com/minburg/vst-kick-synth/releases") {
+                            nih_log!("Failed to open browser: {}", e);
+                        }
+                    })
+                    .height(Stretch(1.0))
+                    .left(Stretch(1.0))
+                    .right(Stretch(1.0))
+                    // .width(Stretch(0.5))
+                    .child_space(Stretch(1.0));
 
-        VerticalParamSlider::new(cx, Data::params, |p| &p.release).width(Stretch(0.5));
-    })
-    .child_space(Stretch(1.0))
-    .child_top(Stretch(0.8))
-    .child_bottom(Stretch(0.8))
-    .col_between(Pixels(20.0))
-    .height(Stretch(0.4)) 
-    .width(Stretch(0.3));
+
+                HStack::new(cx, |cx| {
+
+                    Element::new(cx)
+                        .class("insta-button")
+                        .on_press(|_| {
+                            let _ = webbrowser::open("https://www.instagram.com/convolution.official/");
+                        });
+                    Element::new(cx)
+                        .class("spotify-button").opacity(0.5)
+                        .on_press(|_| {
+                            let _ = webbrowser::open("https://open.spotify.com/artist/7k0eMwQbplT3Zyyy0DalRL?si=aalp-7GQQ2O_cZRodAlsNg");
+                        });
+                })
+                    .height(Stretch(1.0))
+                    .width(Stretch(1.0))
+                    .child_space(Stretch(1.0))
+                    .child_top(Stretch(0.01))
+                    .child_bottom(Stretch(0.01))
+                    .class("link-section");
+
+            }).height(Stretch(0.6));
+
+            HStack::new(cx, |cx| {
+                VStack::new(cx, |cx| {
+                    VerticalParamSlider::new(cx, Data::params, |p| &p.attack)
+                        .height(Stretch(1.0))
+                        .width(Stretch(0.5));
+                    Label::new(cx, "[A]")
+                        .height(Stretch(0.2))
+                        .left(Stretch(1.0))
+                        .right(Stretch(1.0))
+                        .child_space(Stretch(1.0))
+                        .class("adsr-label");
+                })
+                .row_between(Pixels(8.0));
+
+                VStack::new(cx, |cx| {
+                    VerticalParamSlider::new(cx, Data::params, |p| &p.decay)
+                        .height(Stretch(1.0))
+                        .width(Stretch(0.5));
+                    Label::new(cx, "[D]")
+                        .height(Stretch(0.2))
+                        .left(Stretch(1.0))
+                        .right(Stretch(1.0))
+                        .child_space(Stretch(1.0))
+                        .class("adsr-label");
+                })
+                .row_between(Pixels(8.0));
+
+                VStack::new(cx, |cx| {
+                    VerticalParamSlider::new(cx, Data::params, |p| &p.sustain)
+                        .height(Stretch(1.0))
+                        .width(Stretch(0.5));
+                    Label::new(cx, "[S]")
+                        .height(Stretch(0.2))
+                        .left(Stretch(1.0))
+                        .right(Stretch(1.0))
+                        .child_space(Stretch(1.0))
+                        .class("adsr-label");
+                })
+                .row_between(Pixels(8.0));
+
+                VStack::new(cx, |cx| {
+                    VerticalParamSlider::new(cx, Data::params, |p| &p.release)
+                        .height(Stretch(1.0))
+                        .width(Stretch(1.0));
+                    Label::new(cx, "[R]")
+                        .height(Stretch(0.2))
+                        .left(Stretch(1.0))
+                        .right(Stretch(1.0))
+                        .child_space(Stretch(1.0))
+                        .class("adsr-label");
+                })
+                .width(Stretch(1.0))
+                .row_between(Pixels(8.0));
+            })
+            // .class("green")
+            .child_space(Stretch(0.6))
+            .child_top(Stretch(0.1))
+            .child_bottom(Stretch(0.1))
+            .col_between(Pixels(16.0))
+            .height(Stretch(1.0))
+            .width(Stretch(1.0));
+
+            VStack::new(cx, |cx| {
+                MyPeakMeter::new(
+                    cx,
+                    Data::peak_meter_l
+                        .map(|peak_meter_l| gain_to_db(peak_meter_l.load(Ordering::Relaxed))),
+                    Some(Duration::from_millis(30)),
+                    true,
+                )
+                .class("vu-meter-no-text")
+                .top(Stretch(0.05))
+                .bottom(Stretch(0.05))
+                .width(Stretch(1.0))
+                .height(Pixels(40.0));
+
+                MyPeakMeter::new(
+                    cx,
+                    Data::peak_meter_r
+                        .map(|peak_meter_r| gain_to_db(peak_meter_r.load(Ordering::Relaxed))),
+                    Some(Duration::from_millis(30)),
+                    false,
+                )
+                .class("vu-meter-no-text")
+                .top(Stretch(0.05))
+                .bottom(Stretch(0.05))
+                .width(Stretch(1.0))
+                .height(Pixels(40.0));
+
+                // Trigger Button
+                create_text_button(
+                    cx,
+                    "TRIGGER",
+                    Data::params.map(|p| p.trigger.value()),
+                    &params,
+                    |p| &p.trigger,
+                    "distortion-param-button",
+                    "active",
+                )
+                .left(Stretch(0.1))
+                .right(Stretch(0.1))
+                .top(Stretch(0.05))
+                .bottom(Stretch(0.05))
+                .width(Stretch(1.0))
+                .height(Pixels(60.0))
+                .child_space(Stretch(1.0)); // Center text horizontally and vertically
+            })
+            .height(Stretch(1.0));
+        });
+    });
 }
 
 fn build_drive_pill(cx: &mut Context) {
-    HStack::new(cx, |cx| {
-        SingleKnob::new(cx, Data::params, |p| &p.drive_model, false, 95.0);
+    ZStack::new(cx, |cx| {
+        // LAYER 1: The Label
+        Label::new(cx, "Drive")
+            .top(Stretch(1.0))
+            .bottom(Stretch(1.0))
+            .left(Stretch(1.0))
+            .right(Stretch(1.0))
+            .width(Stretch(0.5))
+            .child_space(Stretch(1.0))
+            .class("pentagon-label");
 
-        SingleKnob::new(cx, Data::params, |p| &p.drive, false, 95.0);
-    });
+        HStack::new(cx, |cx| {
+            SingleKnob::new(cx, Data::params, |p| &p.drive_model, false, 85.0);
+
+            SingleKnob::new(cx, Data::params, |p| &p.drive, false, 85.0);
+        })
+        .class("orange")
+        .height(Stretch(0.5));
+    })
+    .top(Stretch(0.02))
+    .bottom(Stretch(0.02))
+    .left(Stretch(0.02))
+    .right(Stretch(0.02));
 }
 
 fn build_corrosion_pentagon(cx: &mut Context) {
-    VStack::new(cx, |cx| {
-        // TOP ROW: Frequency (Top-Left) and Width (Top-Right)
-        HStack::new(cx, |cx| {
-            SingleKnob::new(cx, Data::params, |p| &p.corrosion_frequency, false, 95.0);
+    ZStack::new(cx, |cx| {
+        Label::new(cx, "Corrosion")
+            .top(Stretch(0.0))
+            .bottom(Stretch(1.0))
+            .left(Stretch(0.5))
+            .right(Stretch(0.5))
+            .width(Stretch(0.5))
+            .child_space(Stretch(1.0))
+            .class("pentagon-label");
 
-            // This spring sits between the knobs, pushing them to the far left and right edges
-            Element::new(cx).width(Stretch(1.0));
+        VStack::new(cx, |cx| {
+            // TOP ROW: Frequency (Top-Left) and Width (Top-Right)
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |p| &p.corrosion_frequency, false, 85.0);
 
-            SingleKnob::new(cx, Data::params, |p| &p.corrosion_width, false, 95.0);
-        });
+                // This spring sits between the knobs, pushing them to the far left and right edges
+                Element::new(cx).width(Stretch(1.0));
 
-        // MIDDLE ROW: The main Corrosion Amount (Center)
-        HStack::new(cx, |cx| {
-            Element::new(cx).width(Stretch(1.0)); // Pushes right
+                SingleKnob::new(cx, Data::params, |p| &p.corrosion_width, false, 85.0);
+            });
 
-            // The master control for the section
-            SingleKnob::new(cx, Data::params, |p| &p.corrosion_amount, false, 150.0)
-                .class("large-center-knob");
+            // MIDDLE ROW: The main Corrosion Amount (Center)
+            HStack::new(cx, |cx| {
+                Element::new(cx).width(Stretch(1.0)); // Pushes right
 
-            Element::new(cx).width(Stretch(1.0)); // Pushes left
-        });
+                // The master control for the section
+                SingleKnob::new(cx, Data::params, |p| &p.corrosion_amount, false, 120.0)
+                    .class("large-center-knob");
 
-        // BOTTOM ROW: Noise Blend (Bottom-Left) and Stereo (Bottom-Right)
-        HStack::new(cx, |cx| {
-            SingleKnob::new(cx, Data::params, |p| &p.corrosion_noise_blend, false, 95.0);
+                Element::new(cx).width(Stretch(1.0)); // Pushes left
+            });
 
-            // Another spring in the middle pushing these to the bottom corners
-            Element::new(cx).width(Stretch(1.0));
+            // BOTTOM ROW: Noise Blend (Bottom-Left) and Stereo (Bottom-Right)
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |p| &p.corrosion_noise_blend, false, 85.0);
 
-            SingleKnob::new(cx, Data::params, |p| &p.corrosion_stereo, false, 95.0);
-        });
+                // Another spring in the middle pushing these to the bottom corners
+                Element::new(cx).width(Stretch(1.0));
+
+                SingleKnob::new(cx, Data::params, |p| &p.corrosion_stereo, false, 85.0);
+            });
+        })
+        .height(Stretch(1.0))
+        .class("orange");
     })
-    .child_space(Stretch(1.0)); // Adds padding so it doesn't touch the exact edges of the container
+    .top(Stretch(0.02))
+    .bottom(Stretch(0.02))
+    .left(Stretch(0.02))
+    .right(Stretch(0.02));
+    // .child_space(Stretch(1.0)); // Adds padding so it doesn't touch the exact edges of the container
 }
 
 fn build_nam_triangle(cx: &mut Context) {
-    VStack::new(cx, |cx| {
-        // TOP ROW: Model Selector (Centered)
-        HStack::new(cx, |cx| {
-            Element::new(cx).width(Stretch(1.0));
-            // Assuming you have a dropdown/knob for the EnumParam
-            SingleKnob::new(cx, Data::params, |p| &p.nam_model, false, 95.0);
-            Element::new(cx).width(Stretch(1.0));
-        });
+    ZStack::new(cx, |cx| {
+        Label::new(cx, "NAM")
+            .top(Stretch(0.7))
+            .bottom(Stretch(0.3))
+            .left(Stretch(1.0))
+            .right(Stretch(1.0))
+            .width(Stretch(0.5))
+            .child_space(Stretch(1.0))
+            .class("pentagon-label");
 
-        // BOTTOM ROW: Input and Output Gain
-        HStack::new(cx, |cx| {
-            SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 95.0);
-            Element::new(cx).width(Stretch(1.0)); // Pushes them slightly apart
-            SingleKnob::new(cx, Data::params, |p| &p.nam_output_gain, false, 95.0);
-        });
-    });
+        Label::new(cx, Data::params.map(|p| p.nam_status_text.read().clone()))
+            .class("nam-status-label")
+            .toggle_class(
+                "success",
+                Data::params.map(|p| p.nam_is_loaded.load(Ordering::Relaxed)),
+            )
+            .toggle_class(
+                "error",
+                Data::params.map(|p| !p.nam_is_loaded.load(Ordering::Relaxed)),
+            )
+            .top(Stretch(0.85))
+            .bottom(Stretch(0.15))
+            .left(Stretch(1.0))
+            .right(Stretch(1.0))
+            .width(Stretch(0.5))
+            .child_space(Stretch(1.0));
+
+        VStack::new(cx, |cx| {
+            // TOP ROW: Model Selector (Centered)
+            HStack::new(cx, |cx| {
+                Element::new(cx).width(Stretch(1.0));
+                // Assuming you have a dropdown/knob for the EnumParam
+                SingleKnob::new(cx, Data::params, |p| &p.nam_model, false, 85.0);
+                Element::new(cx).width(Stretch(1.0));
+            });
+
+            // BOTTOM ROW: Input and Output Gain
+            HStack::new(cx, |cx| {
+                SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0);
+                Element::new(cx).width(Stretch(1.0)); // Pushes them slightly apart
+                SingleKnob::new(cx, Data::params, |p| &p.nam_output_gain, false, 85.0);
+            });
+        })
+        .class("orange")
+        .height(Stretch(1.0));
+    })
+    .top(Stretch(0.02))
+    .bottom(Stretch(0.02))
+    .left(Stretch(0.02))
+    .right(Stretch(0.02));
 }
 
 fn create_text_button<'a, L, F>(

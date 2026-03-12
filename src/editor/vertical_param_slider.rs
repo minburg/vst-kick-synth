@@ -39,8 +39,12 @@ pub enum VerticalParamSliderStyle {
     /// Always fill the bar starting from the bottom.
     FromBottom,
     FromMidPoint,
-    CurrentStep { even: bool },
-    CurrentStepLabeled { even: bool },
+    CurrentStep {
+        even: bool,
+    },
+    CurrentStepLabeled {
+        even: bool,
+    },
 }
 
 enum VerticalParamSliderEvent {
@@ -81,66 +85,66 @@ impl VerticalParamSlider {
         }
         .build(cx, |cx| {
             ParamWidgetBase::build_view(params, params_to_param, move |cx, param_data| {
-                    Binding::new(cx, VerticalParamSlider::style, move |cx, style| {
-                        let style = style.get(cx);
+                Binding::new(cx, VerticalParamSlider::style, move |cx, style| {
+                    let style = style.get(cx);
 
-                        let unmodulated_normalized_value_lens =
-                            param_data.make_lens(|param| param.unmodulated_normalized_value());
-                        let display_value_lens = param_data.make_lens(|param| {
-                            param.normalized_value_to_string(param.unmodulated_normalized_value(), true)
-                        });
-
-                        let fill_start_delta_lens =
-                            unmodulated_normalized_value_lens.map(move |current_value| {
-                                Self::compute_fill_start_delta(
-                                    style,
-                                    param_data.param(),
-                                    *current_value,
-                                )
-                            });
-
-                        let modulation_start_delta_lens = param_data.make_lens(move |param| {
-                            Self::compute_modulation_fill_start_delta(style, param)
-                        });
-
-                        let make_preview_value_lens = move |normalized_value| {
-                            param_data.make_lens(move |param| {
-                                param.normalized_value_to_string(normalized_value, true)
-                            })
-                        };
-
-                        Binding::new(
-                            cx,
-                            VerticalParamSlider::text_input_active,
-                            move |cx, text_input_active| {
-                                if text_input_active.get(cx) {
-                                    Self::text_input_view(cx, display_value_lens);
-                                } else {
-                                    ZStack::new(cx, |cx| {
-                                        Self::slider_fill_view(
-                                            cx,
-                                            fill_start_delta_lens,
-                                            modulation_start_delta_lens,
-                                        );
-                                        Self::slider_label_view(
-                                            cx,
-                                            param_data.param(),
-                                            style,
-                                            display_value_lens,
-                                            make_preview_value_lens,
-                                            VerticalParamSlider::label_override,
-                                        );
-                                    })
-                                        .width(Stretch(1.0))
-                                        .height(Stretch(1.0))
-                                        .hoverable(false);
-                                }
-                            },
-                        );
+                    let unmodulated_normalized_value_lens =
+                        param_data.make_lens(|param| param.unmodulated_normalized_value());
+                    let display_value_lens = param_data.make_lens(|param| {
+                        param.normalized_value_to_string(param.unmodulated_normalized_value(), true)
                     });
-                })(cx);
-            })
-            .class("vertical-param-slider")
+
+                    let fill_start_delta_lens =
+                        unmodulated_normalized_value_lens.map(move |current_value| {
+                            Self::compute_fill_start_delta(
+                                style,
+                                param_data.param(),
+                                *current_value,
+                            )
+                        });
+
+                    let modulation_start_delta_lens = param_data.make_lens(move |param| {
+                        Self::compute_modulation_fill_start_delta(style, param)
+                    });
+
+                    let make_preview_value_lens = move |normalized_value| {
+                        param_data.make_lens(move |param| {
+                            param.normalized_value_to_string(normalized_value, true)
+                        })
+                    };
+
+                    Binding::new(
+                        cx,
+                        VerticalParamSlider::text_input_active,
+                        move |cx, text_input_active| {
+                            if text_input_active.get(cx) {
+                                Self::text_input_view(cx, display_value_lens);
+                            } else {
+                                ZStack::new(cx, |cx| {
+                                    Self::slider_fill_view(
+                                        cx,
+                                        fill_start_delta_lens,
+                                        modulation_start_delta_lens,
+                                    );
+                                    Self::slider_label_view(
+                                        cx,
+                                        param_data.param(),
+                                        style,
+                                        display_value_lens,
+                                        make_preview_value_lens,
+                                        VerticalParamSlider::label_override,
+                                    );
+                                })
+                                .width(Stretch(1.0))
+                                .height(Stretch(1.0))
+                                .hoverable(false);
+                            }
+                        },
+                    );
+                });
+            })(cx);
+        })
+        .class("vertical-param-slider")
     }
 
     fn text_input_view(cx: &mut Context, display_value_lens: impl Lens<Target = String>) {
@@ -172,17 +176,21 @@ impl VerticalParamSlider {
         fill_start_delta_lens: impl Lens<Target = (f32, f32)>,
         modulation_start_delta_lens: impl Lens<Target = (f32, f32)>,
     ) {
+        // Main Fill
         Element::new(cx)
             .class("fill")
-            .width(Stretch(1.0)) // Swapped to width
-            .bottom(fill_start_delta_lens.map(|(start_t, _)| Percentage(start_t * 100.0))) // Use bottom instead of left
-            .height(fill_start_delta_lens.map(|(_, delta)| Percentage(delta * 100.0))) // Use height instead of width
+            .width(Stretch(1.0))
+            .top(Stretch(1.0)) // MAGIC LINE: Pushes the element down to anchor it to the bottom!
+            .bottom(fill_start_delta_lens.map(|(start_t, _)| Percentage(start_t * 100.0)))
+            .height(fill_start_delta_lens.map(|(_, delta)| Percentage(delta * 100.0)))
             .hoverable(false);
 
+        // Modulation Fill
         Element::new(cx)
             .class("fill")
             .class("fill--modulation")
             .width(Stretch(1.0))
+            .top(Stretch(1.0)) // MAGIC LINE: Ensure modulation fill also anchors correctly
             .visibility(modulation_start_delta_lens.map(|(_, delta)| *delta != 0.0))
             .height(modulation_start_delta_lens.map(|(_, delta)| Percentage(delta.abs() * 100.0)))
             .bottom(modulation_start_delta_lens.map(|(start_t, delta)| {
@@ -223,9 +231,9 @@ impl VerticalParamSlider {
                             .hoverable(false);
                     }
                 })
-                    .height(Stretch(1.0))
-                    .width(Stretch(1.0))
-                    .hoverable(false);
+                .height(Stretch(1.0))
+                .width(Stretch(1.0))
+                .hoverable(false);
             }
             _ => {
                 Binding::new(cx, label_override_lens, move |cx, label_override_lens| {
@@ -233,12 +241,12 @@ impl VerticalParamSlider {
                         Some(label_override) => Label::new(cx, &label_override),
                         None => Label::new(cx, display_value_lens),
                     }
-                        .class("value")
-                        .class("value--single")
-                        .child_space(Stretch(1.0))
-                        .height(Stretch(1.0))
-                        .width(Stretch(1.0))
-                        .hoverable(false);
+                    .class("value")
+                    .class("value--single")
+                    .child_space(Stretch(1.0))
+                    .height(Stretch(1.0))
+                    .width(Stretch(1.0))
+                    .hoverable(false);
                 });
             }
         };
@@ -275,15 +283,16 @@ impl VerticalParamSlider {
             }
             VerticalParamSliderStyle::CurrentStep { even: true }
             | VerticalParamSliderStyle::CurrentStepLabeled { even: true }
-            if step_count.is_some() =>
-                {
-                    let step_count = step_count.unwrap() as f32;
-                    let discrete_values = step_count + 1.0;
-                    let previous_step = (current_value * step_count) / discrete_values;
+                if step_count.is_some() =>
+            {
+                let step_count = step_count.unwrap() as f32;
+                let discrete_values = step_count + 1.0;
+                let previous_step = (current_value * step_count) / discrete_values;
 
-                    (previous_step, discrete_values.recip())
-                }
-            VerticalParamSliderStyle::CurrentStep { .. } | VerticalParamSliderStyle::CurrentStepLabeled { .. } => {
+                (previous_step, discrete_values.recip())
+            }
+            VerticalParamSliderStyle::CurrentStep { .. }
+            | VerticalParamSliderStyle::CurrentStepLabeled { .. } => {
                 let previous_step = param.previous_normalized_step(current_value, false);
                 let next_step = param.next_normalized_step(current_value, false);
 
@@ -300,9 +309,8 @@ impl VerticalParamSlider {
         param: &P,
     ) -> (f32, f32) {
         match style {
-            VerticalParamSliderStyle::CurrentStep { .. } | VerticalParamSliderStyle::CurrentStepLabeled { .. } => {
-                (0.0, 0.0)
-            }
+            VerticalParamSliderStyle::CurrentStep { .. }
+            | VerticalParamSliderStyle::CurrentStepLabeled { .. } => (0.0, 0.0),
             VerticalParamSliderStyle::Centered
             | VerticalParamSliderStyle::FromMidPoint
             | VerticalParamSliderStyle::FromBottom => {
@@ -412,7 +420,8 @@ impl View for VerticalParamSlider {
                     meta.consume();
                 }
             }
-            WindowEvent::MouseMove(_x, y) => { // Track y instead of x
+            WindowEvent::MouseMove(_x, y) => {
+                // Track y instead of x
                 if self.drag_active {
                     if cx.modifiers().shift() {
                         let granular_drag_status =
