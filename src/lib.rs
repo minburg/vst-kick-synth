@@ -2,24 +2,23 @@
  * Copyright (C) 2026 Marinus Burger
  */
 
+use nih_plug::prelude::AtomicF32;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
+use parking_lot::RwLock;
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use nih_plug::prelude::AtomicF32;
-use parking_lot::RwLock;
-
 
 mod editor;
 #[cfg(feature = "nam")]
 mod nam;
 
 const NAM_MODEL_PHILIPS: &str = include_str!("resource/nam/Philips_EL3541D.nam");
-const NAM_MODEL_CULTURE_VULTURE: &str = include_str!("resource/nam/Culture_Vulture_HIGH_OD_Bias 3_Drive_14_PK5.nam");
+const NAM_MODEL_CULTURE_VULTURE: &str =
+    include_str!("resource/nam/Culture_Vulture_HIGH_OD_Bias 3_Drive_14_PK5.nam");
 const NAM_MODEL_JH24: &str = include_str!("resource/nam/TAPE_OUT_JH24_30-450_L.nam");
-
 
 // Helper function to map a 0-1 value to a logarithmic frequency range
 fn log_scale(value: f32, min: f32, max: f32) -> f32 {
@@ -43,6 +42,7 @@ struct VoiceState {
     midi_velocity: f32,
     analog_drift: f32,
     fast_release: bool,
+    midi_note: u8,
 }
 
 impl Default for VoiceState {
@@ -63,6 +63,7 @@ impl Default for VoiceState {
             midi_velocity: 1.0,
             analog_drift: 0.0,
             fast_release: false,
+            midi_note: 36,
         }
     }
 }
@@ -219,6 +220,12 @@ struct KickParams {
     pub gui_trigger: std::sync::atomic::AtomicU32,
     /// Release Logic for the UI (consumed by audio thread)
     pub gui_release: std::sync::atomic::AtomicU32,
+
+    #[id = "bass_synth_mode"]
+    pub bass_synth_mode: BoolParam,
+
+    #[id = "nam_active"]
+    pub nam_active: BoolParam,
 
     #[id = "nam_input_gain"]
     pub nam_input_gain: FloatParam,
@@ -418,10 +425,17 @@ impl Default for KickParams {
 
             trigger: BoolParam::new("Trigger", false),
 
+            bass_synth_mode: BoolParam::new("808 Mode", false),
+
+            nam_active: BoolParam::new("NAM Active", false),
+
             nam_input_gain: FloatParam::new(
                 "Input Gain",
                 0.0,
-                FloatRange::Linear { min: -18.0, max: 18.0 },
+                FloatRange::Linear {
+                    min: -18.0,
+                    max: 18.0,
+                },
             )
             .with_unit("dB")
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
@@ -429,7 +443,10 @@ impl Default for KickParams {
             nam_output_gain: FloatParam::new(
                 "Output Gain",
                 0.0,
-                FloatRange::Linear { min: -18.0, max: 18.0 },
+                FloatRange::Linear {
+                    min: -18.0,
+                    max: 18.0,
+                },
             )
             .with_unit("dB")
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
@@ -544,6 +561,7 @@ struct SmoothedParams {
     corrosion_amount: f32,
     nam_input_gain: f32,
     nam_output_gain: f32,
+    bass_synth_mode: bool,
 }
 
 impl Plugin for KickSynth {
@@ -595,10 +613,15 @@ impl Plugin for KickSynth {
         );
 
         // Resize NAM buffers if needed (though max_buffer_size is usually stable)
-        self.mono_buffer.resize(_buffer_config.max_buffer_size as usize, 0.0);
-        self.nam_output_buffer.resize(_buffer_config.max_buffer_size as usize, 0.0);
+        self.mono_buffer
+            .resize(_buffer_config.max_buffer_size as usize, 0.0);
+        self.nam_output_buffer
+            .resize(_buffer_config.max_buffer_size as usize, 0.0);
         #[cfg(feature = "nam")]
-        self.nam_synth.update_settings(_buffer_config.sample_rate, _buffer_config.max_buffer_size as i32);
+        self.nam_synth.update_settings(
+            _buffer_config.sample_rate,
+            _buffer_config.max_buffer_size as i32,
+        );
 
         true
     }
@@ -673,10 +696,10 @@ impl Plugin for KickSynth {
 
         // If we have UI triggers, process them
         if trigger_count > 0 {
-            self.trigger_note(1.0);
+            self.trigger_note(1.0, self.active_midi_note.unwrap_or(36).saturating_sub(24));
         }
-        
-        // Only release if we didn't just trigger in this exact block, 
+
+        // Only release if we didn't just trigger in this exact block,
         // OR if we have more releases than triggers (meaning button was already down).
         if release_count > 0 && trigger_count == 0 {
             self.release_note();
@@ -684,7 +707,7 @@ impl Plugin for KickSynth {
 
         // Fallback for automation
         if trigger_param_val && !self.was_trigger_on {
-            self.trigger_note(1.0);
+            self.trigger_note(1.0, self.active_midi_note.unwrap_or(36).saturating_sub(24));
         } else if !trigger_param_val && self.was_trigger_on {
             self.release_note();
         }
@@ -695,6 +718,7 @@ impl Plugin for KickSynth {
 
         #[cfg(feature = "nam")]
         let mut nam_output_gains: Vec<f32> = Vec::with_capacity(num_samples);
+        let nam_active_value = self.params.nam_active.value();
 
         for sample_idx in 0..num_samples {
             #[cfg(debug_assertions)]
@@ -702,7 +726,7 @@ impl Plugin for KickSynth {
                 self.debug_phase += 1.0 / self.sample_rate;
                 if self.debug_phase >= 0.5 {
                     self.debug_phase -= 0.5;
-                    self.trigger_note(0.8);
+                    self.trigger_note(0.8, 12); // C0
                     self.debug_release_timer = 0.2 * self.sample_rate;
                 }
 
@@ -723,7 +747,7 @@ impl Plugin for KickSynth {
                     NoteEvent::NoteOn { velocity, note, .. } => {
                         if velocity > 0.0 {
                             self.active_midi_note = Some(note);
-                            self.trigger_note(velocity);
+                            self.trigger_note(velocity, note.saturating_sub(24));
                         } else {
                             if self.active_midi_note == Some(note) {
                                 self.release_note();
@@ -761,6 +785,7 @@ impl Plugin for KickSynth {
                 corrosion_amount: self.params.corrosion_amount.smoothed.next(),
                 nam_input_gain: self.params.nam_input_gain.smoothed.next(),
                 nam_output_gain: self.params.nam_output_gain.smoothed.next(),
+                bass_synth_mode: self.params.bass_synth_mode.value(),
             };
 
             // Process active voice
@@ -783,14 +808,17 @@ impl Plugin for KickSynth {
                     &self.wavetable,
                     &self.sampled_noise,
                 );
-                if releasing_voice.current_phase == EnvelopePhase::Idle && releasing_voice.tex_env_phase == EnvelopePhase::Idle {
+                if releasing_voice.current_phase == EnvelopePhase::Idle
+                    && releasing_voice.tex_env_phase == EnvelopePhase::Idle
+                {
                     self.releasing_voice = None;
                 }
             }
-            
-            let input_gain_amp = {
-                #[cfg(feature = "nam")] { util::db_to_gain_fast(params.nam_input_gain) }
-                #[cfg(not(feature = "nam"))] { 1.0 }
+
+            let input_gain_amp = if cfg!(feature = "nam") && nam_active_value {
+                util::db_to_gain_fast(params.nam_input_gain)
+            } else {
+                1.0
             };
             self.mono_buffer[sample_idx] = mono_sample * input_gain_amp;
 
@@ -798,24 +826,38 @@ impl Plugin for KickSynth {
             nam_output_gains.push(util::db_to_gain_fast(params.nam_output_gain));
         }
 
-        // 2. Apply NAM Block
+        // 2. Apply NAM Block if enabled and active
         #[cfg(feature = "nam")]
-        self.nam_synth.process_block(
-            &self.mono_buffer[0..num_samples],
-            &mut self.nam_output_buffer[0..num_samples],
-        );
-
+        if nam_active_value {
+            self.nam_synth.process_block(
+                &self.mono_buffer[0..num_samples],
+                &mut self.nam_output_buffer[0..num_samples],
+            );
+        } else {
+            // Bypass NAM: just copy input to output
+            self.nam_output_buffer[0..num_samples]
+                .copy_from_slice(&self.mono_buffer[0..num_samples]);
+        }
         #[cfg(not(feature = "nam"))]
         self.nam_output_buffer[0..num_samples].copy_from_slice(&self.mono_buffer[0..num_samples]);
 
         // 3. Post-NAM: Stereoize and write to output
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
-            let output_gain = {
-                #[cfg(feature = "nam")] { nam_output_gains[sample_idx] }
-                #[cfg(not(feature = "nam"))] { 1.0 }
+            let output_gain = if cfg!(feature = "nam") && nam_active_value {
+                #[cfg(feature = "nam")]
+                {
+                    nam_output_gains[sample_idx]
+                }
+                #[cfg(not(feature = "nam"))]
+                {
+                    1.0
+                }
+            } else {
+                1.0
             };
+
             let driven = self.nam_output_buffer[sample_idx] * output_gain;
-            
+
             // Note: We use the current smoothed value of corrosion_amount for the second pass.
             // In a better implementation, we'd buffer the smoothed values too, but this is usually fine for parameters.
             let (out_l, out_r) = Self::apply_corrosion(
@@ -873,7 +915,8 @@ impl KickSynth {
         wavetable: &[f32],
         sampled_noise: &[f32],
     ) -> f32 {
-        if voice.current_phase != EnvelopePhase::Idle || voice.tex_env_phase != EnvelopePhase::Idle {
+        if voice.current_phase != EnvelopePhase::Idle || voice.tex_env_phase != EnvelopePhase::Idle
+        {
             // ADSR Logic
             match voice.current_phase {
                 EnvelopePhase::Attack => {
@@ -933,8 +976,16 @@ impl KickSynth {
                 0.0
             };
 
-            let current_freq =
-                params.tune + (voice.analog_drift * params.analog_variation) + (params.sweep * pitch_env_val);
+            let base_tune = if params.bass_synth_mode {
+                // MIDI note to frequency
+                440.0 * 2.0f32.powf((voice.midi_note as f32 - 69.0) / 12.0)
+            } else {
+                params.tune
+            };
+
+            let current_freq = base_tune
+                + (voice.analog_drift * params.analog_variation)
+                + (params.sweep * pitch_env_val);
             let phase_inc = current_freq / sample_rate;
             voice.phase = (voice.phase + phase_inc).fract();
 
@@ -970,8 +1021,11 @@ impl KickSynth {
                     .wrapping_add(1013904223);
 
                 let current_free_rng = free_rng_state.get();
-                free_rng_state
-                    .set(current_free_rng.wrapping_mul(1664525).wrapping_add(1013904223));
+                free_rng_state.set(
+                    current_free_rng
+                        .wrapping_mul(1664525)
+                        .wrapping_add(1013904223),
+                );
 
                 let static_val = (voice.static_rng_state as f32) / (u32::MAX as f32);
                 let free_val = (current_free_rng as f32) / (u32::MAX as f32);
@@ -981,13 +1035,19 @@ impl KickSynth {
 
                 let noise_val = match params.tex_type {
                     1 => {
-                        let threshold = 0.999 - (params.tex_tone * 0.1);
-                        let static_dust = if static_val > threshold { static_sym } else { 0.0 };
+                        // DUST
+                        let inverted_tone = 1.0 - params.tex_tone;
+                        let threshold = 0.999 - (inverted_tone * 0.1);
+                        let static_dust = if static_val > threshold {
+                            static_sym
+                        } else {
+                            0.0
+                        };
                         let free_dust = if free_val > threshold { free_sym } else { 0.0 };
-                        let raw_dust =
-                            static_dust * (1.0 - params.tex_variation) + free_dust * params.tex_variation;
+                        let raw_dust = static_dust * (1.0 - params.tex_variation)
+                            + free_dust * params.tex_variation;
 
-                        let cutoff = 8000.0 * (1.0 - params.tex_tone * 0.9);
+                        let cutoff = 8000.0 * (1.0 - inverted_tone * 0.9);
                         let dt = 1.0 / sample_rate;
                         let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
                         let alpha = dt / (rc + dt);
@@ -996,6 +1056,7 @@ impl KickSynth {
                         voice.tex_filter_state * 3.0
                     }
                     2 => {
+                        // CRACKLE
                         let cutoff = 200.0 * 50.0_f32.powf(params.tex_tone);
                         let dt = 1.0 / sample_rate;
                         let rc = 1.0 / (2.0 * std::f32::consts::PI * cutoff);
@@ -1003,11 +1064,9 @@ impl KickSynth {
 
                         let eq_pwr_static = (1.0 - params.tex_variation).sqrt();
                         let eq_pwr_free = params.tex_variation.sqrt();
-                        let combined_noise =
-                            static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+                        let combined_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
 
-                        voice.tex_filter_state +=
-                            alpha * (combined_noise - voice.tex_filter_state);
+                        voice.tex_filter_state += alpha * (combined_noise - voice.tex_filter_state);
                         let shaped = voice.tex_filter_state
                             * voice.tex_filter_state
                             * voice.tex_filter_state
@@ -1015,8 +1074,9 @@ impl KickSynth {
                         shaped.clamp(-1.0, 1.0)
                     }
                     3 => {
+                        // SAMPLED
                         let mut t = voice.wt_phase * (sampled_noise.len() as f32);
-                        let playback_speed = 0.5 + params.tex_tone;
+                        let playback_speed = 0.5 + (8.0_f32 * params.tex_tone);
 
                         voice.wt_phase += playback_speed / sample_rate;
                         if voice.wt_phase >= 1.0 {
@@ -1036,11 +1096,20 @@ impl KickSynth {
                         s1 + frac * (s2 - s1)
                     }
                     4 => {
-                        let base_freq = 20.0 * 50.0_f32.powf(params.tex_tone);
+                        // ORGANIC
+                        let adjusted_tone = if params.tex_tone < 0.5 {
+                            // Map 0.0 -> 0.5 to a wider range
+                            // This doubles the "distance" from the center (0.5)
+                            0.5 - (0.5 - params.tex_tone) * 1.5
+                        } else {
+                            // Keep 0.5 -> 1.0 exactly as is
+                            params.tex_tone
+                        };
+
+                        let base_freq = 20.0 * 50.0_f32.powf(adjusted_tone);
                         let eq_pwr_static = (1.0 - params.tex_variation).sqrt();
                         let eq_pwr_free = params.tex_variation.sqrt();
-                        let combined_noise =
-                            static_sym * eq_pwr_static + free_sym * eq_pwr_free;
+                        let combined_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
 
                         let freq = base_freq * (1.0 + 0.05 * combined_noise);
                         let phase_inc = freq / sample_rate;
@@ -1057,11 +1126,13 @@ impl KickSynth {
                         s1 + frac * (s2 - s1)
                     }
                     5 => {
+                        // VINYL
                         let eq_pwr_static = (1.0 - params.tex_variation).sqrt();
                         let eq_pwr_free = params.tex_variation.sqrt();
                         let hiss_noise = static_sym * eq_pwr_static + free_sym * eq_pwr_free;
 
-                        let mix_val = static_val * (1.0 - params.tex_variation) + free_val * params.tex_variation;
+                        let mix_val = static_val * (1.0 - params.tex_variation)
+                            + free_val * params.tex_variation;
                         let pop_threshold = 0.9995 - (params.tex_tone * 0.005);
                         let pop = if mix_val > pop_threshold {
                             1.5 * hiss_noise.signum()
@@ -1079,16 +1150,16 @@ impl KickSynth {
                         noise.clamp(-1.0, 1.0)
                     }
                     6 => {
-                        let freq = 1000.0 * 4.0_f32.powf(params.tex_tone);
+                        // ZAP
+                        let freq = 1000.0 * 4.0_f32.powf((2.0_f32 * params.tex_tone));
                         let mut mod_freq = freq * 0.5 * params.tex_variation;
                         if params.tex_variation <= 0.0 {
                             mod_freq = freq * 0.5;
                         }
 
                         let drift = (free_val - 0.5) * 200.0 * params.tex_variation;
-                        voice.tex_filter_state_2 = (voice.tex_filter_state_2
-                            + (mod_freq + drift) / sample_rate)
-                            .fract();
+                        voice.tex_filter_state_2 =
+                            (voice.tex_filter_state_2 + (mod_freq + drift) / sample_rate).fract();
                         let mo = (voice.tex_filter_state_2 * 2.0 * std::f32::consts::PI).sin();
 
                         voice.wt_phase =
@@ -1100,8 +1171,7 @@ impl KickSynth {
                 tex_signal = noise_val * voice.tex_env_value * params.tex_amt * 0.4 * 0.7;
             }
 
-            let vel_mult = voice.midi_velocity * (127.0 / 100.0);
-            let pre_drive = (signal + tex_signal) * vel_mult;
+            let pre_drive = signal + tex_signal;
 
             let driven_signal = match params.drive_model {
                 1 => Self::drive_tape_classic(params.drive, pre_drive) * 0.89125,
@@ -1118,7 +1188,11 @@ impl KickSynth {
             let drive_wet = params.drive.sqrt();
             let driven = pre_drive * (1.0 - drive_wet) + driven_signal * drive_wet;
 
-            let output_val = driven * voice.midi_velocity * 0.9;
+            let vel_range_db = 10.0;
+            let min_gain = 10.0f32.powf(-vel_range_db / 20.0);
+            let vel_mapped = min_gain + voice.midi_velocity * (1.0 - min_gain);
+
+            let output_val = driven * vel_mapped * 0.5;
 
             if voice.current_phase != EnvelopePhase::Idle {
                 voice.pitch_env_timer += 1.0;
@@ -1130,7 +1204,7 @@ impl KickSynth {
         }
     }
 
-    fn trigger_note(&mut self, velocity: f32) {
+    fn trigger_note(&mut self, velocity: f32, note: u8) {
         if self.voice.current_phase != EnvelopePhase::Idle {
             let mut releasing = self.voice.clone();
             releasing.current_phase = EnvelopePhase::Release;
@@ -1143,6 +1217,7 @@ impl KickSynth {
         }
 
         self.voice = VoiceState::default();
+        self.voice.midi_note = note;
         self.voice.midi_velocity = velocity;
         self.voice.current_phase = EnvelopePhase::Attack;
 
@@ -1157,13 +1232,16 @@ impl KickSynth {
     }
 
     fn release_note(&mut self) {
-        if self.voice.current_phase != EnvelopePhase::Idle && self.voice.current_phase != EnvelopePhase::Release
+        if self.voice.current_phase != EnvelopePhase::Idle
+            && self.voice.current_phase != EnvelopePhase::Release
         {
             self.voice.current_phase = EnvelopePhase::Release;
             self.voice.phase_timer = 0.0;
             self.voice.fast_release = false;
         }
-        if self.voice.tex_env_phase != EnvelopePhase::Idle && self.voice.tex_env_phase != EnvelopePhase::Release {
+        if self.voice.tex_env_phase != EnvelopePhase::Idle
+            && self.voice.tex_env_phase != EnvelopePhase::Release
+        {
             self.voice.tex_env_phase = EnvelopePhase::Release;
         }
     }
@@ -1273,14 +1351,20 @@ impl KickSynth {
                 let mut state = corrosion.borrow_mut();
 
                 let sine_l = (state.sine_phase * std::f32::consts::TAU).sin();
-                let sine_r =
-                    ((state.sine_phase * std::f32::consts::TAU) + corr_stereo * std::f32::consts::PI)
-                        .sin();
+                let sine_r = ((state.sine_phase * std::f32::consts::TAU)
+                    + corr_stereo * std::f32::consts::PI)
+                    .sin();
                 state.sine_phase = (state.sine_phase + corr_freq / sample_rate).fract();
 
-                state.rng = state.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                state.rng = state
+                    .rng
+                    .wrapping_mul(1_664_525)
+                    .wrapping_add(1_013_904_223);
                 let raw_noise_l = (state.rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
-                state.rng = state.rng.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                state.rng = state
+                    .rng
+                    .wrapping_mul(1_664_525)
+                    .wrapping_add(1_013_904_223);
                 let raw_noise_r = (state.rng as f32 / u32::MAX as f32) * 2.0 - 1.0;
 
                 let lp_cutoff = (corr_freq * corr_width.max(0.01)).min(sample_rate * 0.499);
@@ -1328,7 +1412,6 @@ impl KickSynth {
         }
     }
 }
-
 
 #[inline]
 fn update_peak_meters(

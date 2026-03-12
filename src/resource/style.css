@@ -5,7 +5,7 @@
 }
 
 .main-gui-transparent {
-    background-color: rgba(0, 0, 0, 0.58);
+    background-color: rgba(0, 0, 0, 0.45);
 }
 
 .knob-section {
@@ -129,7 +129,7 @@
 }
 
 .single-knob-label {
-    color: #c6a863;
+    color: #e6c372;
     font-size: 16.0;
     font-family: "Comfortaa";
 }
@@ -328,6 +328,49 @@
     /*font-weight: bold;*/
     font-family: "Orbitron";
 }
+
+.distortion-param-button.active {
+    border-width: 1px;
+    border-color: #000000;
+
+    background-color: rgba(116, 53, 92, 0.5);
+    color: #d3a9c3;
+
+    border-radius: 15px;
+    font-size: 28.0;
+    /*font-weight: bold;*/
+    font-family: "Orbitron";
+}
+
+.switch-button {
+    border-width: 1px;
+    border-color: #000000;
+
+    background-color: #74355C;
+    color: #d3a9c3;
+
+    border-radius: 15px;
+    font-size: 20.0;
+    /*font-weight: bold;*/
+    font-family: "Comfortaa";
+}
+
+.switch-button:hover {
+    background-color: rgba(116, 53, 92, 0.5);
+    color: #d3a9c3;
+}
+
+.switch-button.active {
+    background-color: #d3a9c3;
+    color: #74355C;
+}
+
+.switch-button.active:hover {
+    background-color: rgba(211, 169, 195, 0.5);
+    color: #74355C;
+}
+
+/*---------------------------------------------------------------------------------------------------------*/
 
 .nam-status-label {
     font-size: 20.0;

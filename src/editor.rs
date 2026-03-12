@@ -144,203 +144,6 @@ pub(crate) fn create(
         .height(Stretch(1.0))
         .class("main-gui");
 
-        // .class("main-gui");
-
-        // VStack::new(cx, |cx| {
-        //     VStack::new(cx, |cx| {
-        //         Label::new(cx, "CONVOLUTION'S Kick Synth").class("header-title");
-        //         HStack::new(cx, |cx| {
-        //             Label::new(cx, "Check for Updates")
-        //                 .class("update-link")
-        //                 .on_press(|_| {
-        //                     if let Err(e) = webbrowser::open("https://github.com/minburg/vst-kick-synth/releases") {
-        //                         nih_log!("Failed to open browser: {}", e);
-        //                     }
-        //                 });
-        //             Label::new(cx, "v0.1.0").class("header-version-title");
-        //             Element::new(cx)
-        //                 .class("insta-button")
-        //                 .on_press(|_| {
-        //                     let _ = webbrowser::open("https://www.instagram.com/convolution.official/");
-        //                 });
-        //             Element::new(cx)
-        //                 .class("spotify-button").opacity(0.5)
-        //                 .on_press(|_| {
-        //                     let _ = webbrowser::open("https://open.spotify.com/artist/7k0eMwQbplT3Zyyy0DalRL?si=aalp-7GQQ2O_cZRodAlsNg");
-        //                 });
-        //         })
-        //             .width(Stretch(1.0))
-        //             .child_space(Stretch(1.0))
-        //             .child_top(Stretch(0.01))
-        //             .child_bottom(Stretch(0.01))
-        //             .class("link-section");
-        //     })
-        //         .row_between(Pixels(10.0))
-        //         .child_space(Stretch(1.0))
-        //         .class("title-section");
-        //
-        //     HStack::new(cx, |cx| {
-        //         SingleKnob::new(cx, Data::params, |params| &params.tune, false).width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.sweep, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.pitch_decay, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.analog_variation, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.drive, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.drive_model, false)
-        //             .width(Stretch(1.0));
-        //     })
-        //     .width(Stretch(1.0))
-        //     .left(Stretch(0.05))
-        //     .right(Stretch(0.05))
-        //     .class("finetune-section-inner");
-        //
-        //     HStack::new(cx, |cx| {
-        //         SingleKnob::new(cx, Data::params, |params| &params.tex_amt, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.tex_decay, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.tex_variation, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.tex_type, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.tex_tone, false)
-        //             .width(Stretch(1.0));
-        //     })
-        //     .width(Stretch(1.0))
-        //     .left(Stretch(0.05))
-        //     .right(Stretch(0.05))
-        //     .class("finetune-section-inner");
-        //
-        //     HStack::new(cx, |cx| {
-        //         SingleKnob::new(cx, Data::params, |params| &params.corrosion_frequency, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.corrosion_width, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.corrosion_noise_blend, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.corrosion_stereo, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.corrosion_amount, false)
-        //             .width(Stretch(1.0));
-        //     })
-        //         .width(Stretch(1.0))
-        //         .left(Stretch(0.05))
-        //         .right(Stretch(0.05))
-        //         .class("finetune-section-inner");
-        //
-        //     HStack::new(cx, |cx| {
-        //         SingleKnob::new(cx, Data::params, |params| &params.attack, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.decay, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.sustain, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.release, false)
-        //             .width(Stretch(1.0));
-        //     })
-        //     .width(Stretch(1.0))
-        //     .left(Stretch(0.05))
-        //     .right(Stretch(0.05))
-        //     .class("finetune-section-inner");
-        //
-        //     HStack::new(cx, |cx| {
-        //         SingleKnob::new(cx, Data::params, |params| &params.nam_model, false)
-        //             .width(Stretch(1.0));
-        //
-        //         VStack::new(cx, |cx| {
-        //             Label::new(cx, Data::params.map(|p| p.nam_status_text.read().clone()))
-        //                 .class("nam-status-label")
-        //                 .toggle_class("success", Data::params.map(|p| p.nam_is_loaded.load(Ordering::Relaxed)))
-        //                 .toggle_class("error", Data::params.map(|p| !p.nam_is_loaded.load(Ordering::Relaxed)));
-        //         })
-        //         .width(Stretch(1.0))
-        //         .child_space(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.nam_input_gain, false)
-        //             .width(Stretch(1.0));
-        //
-        //         SingleKnob::new(cx, Data::params, |params| &params.nam_output_gain, false)
-        //             .width(Stretch(1.0));
-        //     })
-        //     .width(Stretch(1.0))
-        //     .left(Stretch(0.05))
-        //     .right(Stretch(0.05))
-        //     .class("finetune-section-inner");
-        //
-        //     HStack::new(cx, |cx| {
-        //         MyPeakMeter::new(
-        //             cx,
-        //             Data::peak_meter_l.map(|peak_meter_l| {
-        //                 util::gain_to_db(peak_meter_l.load(Ordering::Relaxed))
-        //             }),
-        //             Some(Duration::from_millis(30)),
-        //             true
-        //         )
-        //             .class("vu-meter-no-text")
-        //             .top(Stretch(0.05))
-        //             .bottom(Stretch(0.05))
-        //             .width(Stretch(1.0))
-        //             .height(Pixels(40.0));
-        //
-        //         // Trigger Button
-        //         create_text_button(
-        //             cx,
-        //             "TRIGGER",
-        //             Data::params.map(|p| p.trigger.value()),
-        //             &params,
-        //             |p| &p.trigger,
-        //             "distortion-param-button",
-        //             "active",
-        //         )
-        //             .left(Stretch(0.1))
-        //             .right(Stretch(0.1))
-        //             .top(Stretch(0.05))
-        //             .bottom(Stretch(0.05))
-        //             .width(Stretch(1.0))
-        //             .height(Pixels(60.0))
-        //             .child_space(Stretch(1.0)); // Center text horizontally and vertically
-        //
-        //         MyPeakMeter::new(
-        //             cx,
-        //             Data::peak_meter_r.map(|peak_meter_r| {
-        //                 util::gain_to_db(peak_meter_r.load(Ordering::Relaxed))
-        //             }),
-        //             Some(Duration::from_millis(30)),
-        //             false
-        //         )
-        //             .class("vu-meter-no-text")
-        //             .top(Stretch(0.05))
-        //             .bottom(Stretch(0.05))
-        //             .width(Stretch(1.0))
-        //             .height(Pixels(40.0));
-        //     })
-        //         .child_space(Stretch(1.0))
-        //         .width(Stretch(1.0))
-        //         .height(Stretch(0.7));
-        // })
-        // .class("main-gui");
-
-        // --------------------------------------------------------------------------------------------------------------- UI
-
         ResizeHandle::new(cx);
     })
 }
@@ -361,15 +164,15 @@ fn build_pitch_core_diamond(cx: &mut Context) {
         VStack::new(cx, |cx| {
             // TOP ROW: Tune (Centered)
             HStack::new(cx, |cx| {
-                Element::new(cx).width(Stretch(1.0)); // Invisible spring pushes right
+                Element::new(cx).width(Stretch(1.0));
                 SingleKnob::new(cx, Data::params, |p| &p.tune, false, 85.0);
-                Element::new(cx).width(Stretch(1.0)); // Invisible spring pushes left
+                Element::new(cx).width(Stretch(1.0));
             });
 
             // MIDDLE ROW: Drift & Decay (Pushed to edges)
             HStack::new(cx, |cx| {
                 SingleKnob::new(cx, Data::params, |p| &p.analog_variation, false, 85.0);
-                Element::new(cx).width(Stretch(1.0)); // Spring in the middle pushes them apart
+                Element::new(cx).width(Stretch(1.0));
                 SingleKnob::new(cx, Data::params, |p| &p.pitch_decay, false, 85.0);
             });
 
@@ -381,7 +184,6 @@ fn build_pitch_core_diamond(cx: &mut Context) {
             });
         })
         .class("red");
-        // .child_space(Stretch(1.0)); // Centers the whole block vertically if needed
     })
     .top(Stretch(0.08))
     .bottom(Stretch(0.08))
@@ -547,7 +349,6 @@ fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
                 .width(Stretch(1.0))
                 .row_between(Pixels(8.0));
             })
-            // .class("green")
             .child_space(Stretch(0.6))
             .child_top(Stretch(0.1))
             .child_bottom(Stretch(0.1))
@@ -556,6 +357,42 @@ fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
             .width(Stretch(1.0));
 
             VStack::new(cx, |cx| {
+                HStack::new(cx, |cx| {
+                    create_toggle_button(
+                        cx,
+                        "808 Mode",
+                        Data::params.map(|p| p.bass_synth_mode.value()),
+                        &params,
+                        |p| &p.bass_synth_mode,
+                        "switch-button",
+                        "active",
+                    )
+                    .left(Stretch(0.3))
+                    .right(Stretch(0.3))
+                    .top(Stretch(0.05))
+                    .bottom(Stretch(0.05))
+                    .width(Stretch(1.0))
+                    .height(Pixels(60.0))
+                    .child_space(Stretch(1.0));
+                    create_toggle_button(
+                        cx,
+                        "NAM",
+                        Data::params.map(|p| p.nam_active.value()),
+                        &params,
+                        |p| &p.nam_active,
+                        "switch-button",
+                        "active",
+                    )
+                    .left(Stretch(0.3))
+                    .right(Stretch(0.3))
+                    .top(Stretch(0.05))
+                    .bottom(Stretch(0.05))
+                    .width(Stretch(1.0))
+                    .height(Pixels(60.0))
+                    .child_space(Stretch(1.0));
+                })
+                .height(Pixels(60.0));
+
                 MyPeakMeter::new(
                     cx,
                     Data::peak_meter_l
@@ -598,7 +435,7 @@ fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
                 .bottom(Stretch(0.05))
                 .width(Stretch(1.0))
                 .height(Pixels(60.0))
-                .child_space(Stretch(1.0)); // Center text horizontally and vertically
+                .child_space(Stretch(1.0));
             })
             .height(Stretch(1.0));
         });
@@ -681,7 +518,6 @@ fn build_corrosion_pentagon(cx: &mut Context) {
     .bottom(Stretch(0.02))
     .left(Stretch(0.02))
     .right(Stretch(0.02));
-    // .child_space(Stretch(1.0)); // Adds padding so it doesn't touch the exact edges of the container
 }
 
 fn build_nam_triangle(cx: &mut Context) {
@@ -724,7 +560,7 @@ fn build_nam_triangle(cx: &mut Context) {
             // BOTTOM ROW: Input and Output Gain
             HStack::new(cx, |cx| {
                 SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0);
-                Element::new(cx).width(Stretch(1.0)); // Pushes them slightly apart
+                Element::new(cx).width(Stretch(1.0));
                 SingleKnob::new(cx, Data::params, |p| &p.nam_output_gain, false, 85.0);
             });
         })
@@ -735,6 +571,51 @@ fn build_nam_triangle(cx: &mut Context) {
     .bottom(Stretch(0.02))
     .left(Stretch(0.02))
     .right(Stretch(0.02));
+}
+
+fn create_toggle_button<'a, L, F>(
+    cx: &'a mut Context,
+    label_text: &'static str,
+    lens: L,
+    params: &Arc<KickParams>,
+    selector: F,
+    class: &str,
+    toggle_class: &str,
+) -> Handle<'a, VStack>
+where
+    L: Lens<Target = bool> + Copy + 'static + Send + Sync,
+    F: 'static + Clone + Fn(&KickParams) -> &BoolParam + Send + Sync,
+{
+    let params_arc = params.clone();
+    let selector = selector.clone();
+
+    VStack::new(cx, |cx| {
+        Label::new(cx, label_text).hoverable(false);
+    })
+    .class(class)
+    .toggle_class(toggle_class, lens)
+    .focusable(true)
+    .on_press(move |cx| {
+        let param = selector(&params_arc);
+        let current_value = param.value();
+        let new_normalized_value = if current_value { 0.0 } else { 1.0 };
+
+        let ptr = param.as_ptr();
+        let param_static: &'static BoolParam = unsafe { std::mem::transmute(param) };
+
+        cx.emit(ParamEvent::BeginSetParameter(param_static));
+        cx.emit(RawParamEvent::BeginSetParameter(ptr));
+        cx.emit(ParamEvent::SetParameterNormalized(
+            param_static,
+            new_normalized_value,
+        ));
+        cx.emit(RawParamEvent::SetParameterNormalized(
+            ptr,
+            new_normalized_value,
+        ));
+        cx.emit(ParamEvent::EndSetParameter(param_static));
+        cx.emit(RawParamEvent::EndSetParameter(ptr));
+    })
 }
 
 fn create_text_button<'a, L, F>(
