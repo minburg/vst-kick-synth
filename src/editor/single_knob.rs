@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use nih_plug::prelude::Param;
 use nih_plug_vizia::vizia::prelude::*;
 use nih_plug_vizia::widgets::param_base::ParamWidgetBase;
@@ -13,6 +14,7 @@ pub enum SingleKnobEvent {
 pub struct SingleKnob {
     param_base: ParamWidgetBase,
     size: f32,
+    on_change: Option<Arc<dyn Fn(&mut EventContext, f32) + Send + Sync>>,
 }
 
 impl SingleKnob {
@@ -32,6 +34,7 @@ impl SingleKnob {
         Self {
             param_base: ParamWidgetBase::new(cx, params.clone(), params_to_param),
             size,
+            on_change: None,
         }
         .build(
             cx,
@@ -121,10 +124,23 @@ impl View for SingleKnob {
             }
             SingleKnobEvent::SetParam(val) => {
                 self.param_base.set_normalized_value(cx, *val);
+                if let Some(on_change) = &self.on_change {
+                    (on_change)(cx, *val);
+                }
             }
             SingleKnobEvent::EndSetParam => {
                 self.param_base.end_set_parameter(cx);
             }
         });
+    }
+}
+
+pub trait SingleKnobExt {
+    fn on_change<F: Fn(&mut EventContext, f32) + Send + Sync + 'static>(self, callback: F) -> Self;
+}
+
+impl SingleKnobExt for Handle<'_, SingleKnob> {
+    fn on_change<F: Fn(&mut EventContext, f32) + Send + Sync + 'static>(self, callback: F) -> Self {
+        self.modify(|single_knob| single_knob.on_change = Some(Arc::new(callback)))
     }
 }

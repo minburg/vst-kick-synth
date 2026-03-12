@@ -1,4 +1,4 @@
-use crate::editor::single_knob::SingleKnob;
+use crate::editor::single_knob::{SingleKnob, SingleKnobExt};
 use crate::util::gain_to_db;
 use nih_plug::prelude::*;
 use nih_plug_vizia::assets::register_noto_sans_light;
@@ -10,7 +10,10 @@ use std::sync::atomic::Ordering;
 use std::sync::Arc;
 
 use crate::editor::my_peak_meter::MyPeakMeter;
+use crate::presets::{self, Preset};
 use crate::KickParams;
+use std::fs::File;
+use std::io::{Read, Write};
 
 mod my_peak_meter;
 mod param_knob;
@@ -28,16 +31,117 @@ const POTI_3_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/poti_3_fixed_s
 const INSTA_ICON_BYTES: &[u8] = include_bytes!("resource/images/instagram_icon.png");
 const SPOTIFY_ICON_BYTES: &[u8] = include_bytes!("resource/images/spotify_icon.png");
 
-use self::param_knob::ParamKnob;
 
 #[derive(Lens)]
 struct Data {
     params: Arc<KickParams>,
     peak_meter_l: Arc<AtomicF32>,
     peak_meter_r: Arc<AtomicF32>,
+    factory_presets: Vec<Preset>,
+    selected_preset: usize,
 }
 
-impl Model for Data {}
+impl Model for Data {
+    fn event(&mut self, cx: &mut EventContext, event: &mut Event) {
+        event.map(|preset_event, _| match preset_event {
+            PresetEvent::LoadFactory(idx) => {
+                let preset = &self.factory_presets[*idx];
+                self.selected_preset = *idx;
+                emit_params_events(cx, &self.params, preset);
+            }
+            PresetEvent::SaveToFile => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .save_file()
+                {
+                    let preset = self.params.get_current_preset();
+                    match serde_json::to_string_pretty(&preset) {
+                        Ok(json) => {
+                            if let Ok(mut file) = File::create(path) {
+                                let _ = file.write_all(json.as_bytes());
+                            }
+                        }
+                        Err(e) => nih_log!("Failed to serialize preset: {}", e),
+                    }
+                }
+            }
+            PresetEvent::LoadFromFile => {
+                if let Some(path) = rfd::FileDialog::new()
+                    .add_filter("JSON", &["json"])
+                    .pick_file()
+                {
+                    match File::open(path) {
+                        Ok(mut file) => {
+                            let mut json = String::new();
+                            if file.read_to_string(&mut json).is_ok() {
+                                match serde_json::from_str::<Preset>(&json) {
+                                    Ok(preset) => {
+                                        emit_params_events(cx, &self.params, &preset);
+                                    }
+                                    Err(e) => nih_log!("Failed to deserialize preset: {}", e),
+                                }
+                            }
+                        }
+                        Err(e) => nih_log!("Failed to open preset file: {}", e),
+                    }
+                }
+            }
+        });
+    }
+}
+
+pub enum PresetEvent {
+    LoadFactory(usize),
+    SaveToFile,
+    LoadFromFile,
+}
+
+fn emit_params_events(cx: &mut EventContext, params: &Arc<KickParams>, preset: &Preset) {
+    // Helper to emit events for a single param
+    fn emit<P: Param + Sync + 'static>(cx: &mut EventContext, param: &P, value: P::Plain)
+    where
+        P::Plain: Send + Clone,
+    {
+        let ptr = param.as_ptr();
+        // transmuting to 'static is safe here because we know params outlives the editor
+        let param_static: &'static P = unsafe { std::mem::transmute(param) };
+
+        let normalized = param.preview_normalized(value.clone());
+
+        cx.emit(ParamEvent::<P>::BeginSetParameter(param_static));
+        cx.emit(RawParamEvent::BeginSetParameter(ptr));
+        cx.emit(ParamEvent::<P>::SetParameter(param_static, value));
+        cx.emit(RawParamEvent::SetParameterNormalized(ptr, normalized));
+        cx.emit(ParamEvent::<P>::EndSetParameter(param_static));
+        cx.emit(RawParamEvent::EndSetParameter(ptr));
+    }
+
+    emit(cx, &params.tune, preset.tune);
+    emit(cx, &params.sweep, preset.sweep);
+    emit(cx, &params.pitch_decay, preset.pitch_decay);
+    emit(cx, &params.drive, preset.drive);
+    emit(cx, &params.drive_model, preset.drive_model);
+    emit(cx, &params.tex_amt, preset.tex_amt);
+    emit(cx, &params.tex_decay, preset.tex_decay);
+    emit(cx, &params.tex_variation, preset.tex_variation);
+    emit(cx, &params.analog_variation, preset.analog_variation);
+    emit(cx, &params.tex_type, preset.tex_type);
+    emit(cx, &params.tex_tone, preset.tex_tone);
+    emit(cx, &params.attack, preset.attack);
+    emit(cx, &params.decay, preset.decay);
+    emit(cx, &params.sustain, preset.sustain);
+    emit(cx, &params.release, preset.release);
+    emit(cx, &params.corrosion_frequency, preset.corrosion_frequency);
+    emit(cx, &params.corrosion_width, preset.corrosion_width);
+    emit(cx, &params.corrosion_noise_blend, preset.corrosion_noise_blend);
+    emit(cx, &params.corrosion_stereo, preset.corrosion_stereo);
+    emit(cx, &params.corrosion_amount, preset.corrosion_amount);
+    emit(cx, &params.bass_synth_mode, preset.bass_synth_mode);
+    emit(cx, &params.nam_active, preset.nam_active);
+    emit(cx, &params.nam_input_gain, preset.nam_input_gain);
+    emit(cx, &params.nam_output_gain, preset.nam_output_gain);
+    emit(cx, &params.nam_model, preset.nam_model);
+}
 
 pub(crate) fn default_state() -> Arc<ViziaState> {
     ViziaState::new(|| (1400, 950))
@@ -84,6 +188,8 @@ pub(crate) fn create(
             params: params.clone(),
             peak_meter_l: peak_meter_l.clone(),
             peak_meter_r: peak_meter_r.clone(),
+            factory_presets: presets::get_factory_presets(),
+            selected_preset: 0,
         }
         .build(cx);
 
@@ -93,6 +199,7 @@ pub(crate) fn create(
             VStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
                     Label::new(cx, "CONVOLUTION'S Kick Synth").class("header-title");
+                    build_preset_header(cx);
                 })
                 .width(Stretch(1.0))
                 .height(Stretch(0.1))
@@ -559,9 +666,57 @@ fn build_nam_triangle(cx: &mut Context) {
 
             // BOTTOM ROW: Input and Output Gain
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0);
+                SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0)
+                    .on_change(|cx, val| {
+                        // Link inversely: 1.0 - val
+                        let linked_val = 1.0 - val;
+                        cx.emit(ParamEvent::<FloatParam>::BeginSetParameter(unsafe {
+                            std::mem::transmute(&Data::params.get(cx).nam_output_gain)
+                        }));
+                        cx.emit(RawParamEvent::BeginSetParameter(
+                            Data::params.get(cx).nam_output_gain.as_ptr(),
+                        ));
+                        cx.emit(ParamEvent::<FloatParam>::SetParameterNormalized(
+                            unsafe { std::mem::transmute(&Data::params.get(cx).nam_output_gain) },
+                            linked_val,
+                        ));
+                        cx.emit(RawParamEvent::SetParameterNormalized(
+                            Data::params.get(cx).nam_output_gain.as_ptr(),
+                            linked_val,
+                        ));
+                        cx.emit(ParamEvent::<FloatParam>::EndSetParameter(unsafe {
+                            std::mem::transmute(&Data::params.get(cx).nam_output_gain)
+                        }));
+                        cx.emit(RawParamEvent::EndSetParameter(
+                            Data::params.get(cx).nam_output_gain.as_ptr(),
+                        ));
+                    });
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.nam_output_gain, false, 85.0);
+                SingleKnob::new(cx, Data::params, |p| &p.nam_output_gain, false, 85.0)
+                    .on_change(|cx, val| {
+                        // Link inversely: 1.0 - val
+                        let linked_val = 1.0 - val;
+                        cx.emit(ParamEvent::<FloatParam>::BeginSetParameter(unsafe {
+                            std::mem::transmute(&Data::params.get(cx).nam_input_gain)
+                        }));
+                        cx.emit(RawParamEvent::BeginSetParameter(
+                            Data::params.get(cx).nam_input_gain.as_ptr(),
+                        ));
+                        cx.emit(ParamEvent::<FloatParam>::SetParameterNormalized(
+                            unsafe { std::mem::transmute(&Data::params.get(cx).nam_input_gain) },
+                            linked_val,
+                        ));
+                        cx.emit(RawParamEvent::SetParameterNormalized(
+                            Data::params.get(cx).nam_input_gain.as_ptr(),
+                            linked_val,
+                        ));
+                        cx.emit(ParamEvent::<FloatParam>::EndSetParameter(unsafe {
+                            std::mem::transmute(&Data::params.get(cx).nam_input_gain)
+                        }));
+                        cx.emit(RawParamEvent::EndSetParameter(
+                            Data::params.get(cx).nam_input_gain.as_ptr(),
+                        ));
+                    });
             });
         })
         .class("orange")
@@ -693,4 +848,34 @@ where
         cx.emit(ParamEvent::EndSetParameter(param_static));
         cx.emit(RawParamEvent::EndSetParameter(ptr));
     })
+}
+
+fn build_preset_header(cx: &mut Context) {
+    HStack::new(cx, |cx| {
+        Label::new(cx, "Preset:").class("preset-label");
+
+        PickList::new(
+            cx,
+            Data::factory_presets.map(|p| p.iter().map(|pr| pr.name.clone()).collect::<Vec<_>>()),
+            Data::selected_preset,
+            true,
+        )
+        .on_select(|cx, index| cx.emit(PresetEvent::LoadFactory(index)))
+        .width(Pixels(200.0))
+        .class("preset-dropdown");
+
+        Button::new(cx, |cx| cx.emit(PresetEvent::SaveToFile), |cx| {
+            Label::new(cx, "Save")
+        })
+        .class("preset-button");
+
+        Button::new(cx, |cx| cx.emit(PresetEvent::LoadFromFile), |cx| {
+            Label::new(cx, "Load")
+        })
+        .class("preset-button");
+    })
+    .child_space(Stretch(1.0))
+    .col_between(Pixels(10.0))
+    .height(Pixels(40.0))
+    .class("preset-header");
 }

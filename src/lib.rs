@@ -6,12 +6,14 @@ use nih_plug::prelude::AtomicF32;
 use nih_plug::prelude::*;
 use nih_plug_vizia::ViziaState;
 use parking_lot::RwLock;
+use serde::{Deserialize, Serialize};
 use std::cell::{Cell, RefCell};
 use std::num::NonZeroU32;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
 mod editor;
+mod presets;
 #[cfg(feature = "nam")]
 mod nam;
 
@@ -123,7 +125,7 @@ enum EnvelopePhase {
     Release,
 }
 
-#[derive(PartialEq, Eq, Clone, Copy, Enum)]
+#[derive(PartialEq, Eq, Clone, Copy, Enum, Serialize, Deserialize, Debug)]
 pub enum NamModel {
     #[name = "Philips EL3541D"]
     PhilipsEL3541D,
@@ -238,6 +240,39 @@ struct KickParams {
 
     pub nam_is_loaded: AtomicBool,
     pub nam_status_text: Arc<RwLock<String>>,
+}
+
+impl KickParams {
+    pub fn get_current_preset(&self) -> crate::presets::Preset {
+        crate::presets::Preset {
+            name: "Custom".to_string(),
+            tune: self.tune.value(),
+            sweep: self.sweep.value(),
+            pitch_decay: self.pitch_decay.value(),
+            drive: self.drive.value(),
+            drive_model: self.drive_model.value(),
+            tex_amt: self.tex_amt.value(),
+            tex_decay: self.tex_decay.value(),
+            tex_variation: self.tex_variation.value(),
+            analog_variation: self.analog_variation.value(),
+            tex_type: self.tex_type.value(),
+            tex_tone: self.tex_tone.value(),
+            attack: self.attack.value(),
+            decay: self.decay.value(),
+            sustain: self.sustain.value(),
+            release: self.release.value(),
+            corrosion_frequency: self.corrosion_frequency.value(),
+            corrosion_width: self.corrosion_width.value(),
+            corrosion_noise_blend: self.corrosion_noise_blend.value(),
+            corrosion_stereo: self.corrosion_stereo.value(),
+            corrosion_amount: self.corrosion_amount.value(),
+            bass_synth_mode: self.bass_synth_mode.value(),
+            nam_active: self.nam_active.value(),
+            nam_input_gain: self.nam_input_gain.value(),
+            nam_output_gain: self.nam_output_gain.value(),
+            nam_model: self.nam_model.value(),
+        }
+    }
 }
 
 impl Default for KickParams {
