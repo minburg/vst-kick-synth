@@ -348,7 +348,7 @@ impl Default for KickParams {
                 0.1,
                 FloatRange::Linear {
                     min: 0.1,
-                    max: 100.0,
+                    max: 1000.0,
                 },
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.1} ms", value))),
@@ -636,30 +636,32 @@ impl Plugin for KickSynth {
         let mut max_amplitude_in_block_r: f32 = 0.0;
 
         // 0. Update NAM model if changed
-        let selected_model = self.params.nam_model.value();
-        if self.current_nam_model != Some(selected_model) {
-            let _content = match selected_model {
-                NamModel::PhilipsEL3541D => NAM_MODEL_PHILIPS,
-                NamModel::CultureVulture => NAM_MODEL_CULTURE_VULTURE,
-                NamModel::JH24 => NAM_MODEL_JH24,
-            };
+        #[cfg(feature = "nam")]
+        {
+            let selected_model = self.params.nam_model.value();
+            if self.current_nam_model != Some(selected_model) {
+                let _content = match selected_model {
+                    NamModel::PhilipsEL3541D => NAM_MODEL_PHILIPS,
+                    NamModel::CultureVulture => NAM_MODEL_CULTURE_VULTURE,
+                    NamModel::JH24 => NAM_MODEL_JH24,
+                };
 
-            #[cfg(feature = "nam")]
-            match self.nam_synth.load_model_content(_content) {
-                Ok(_) => {
-                    self.params.nam_is_loaded.store(true, Ordering::SeqCst);
-                    if let Some(mut text) = self.params.nam_status_text.try_write() {
-                         *text = String::from("NAM Loaded");
+                match self.nam_synth.load_model_content(_content) {
+                    Ok(_) => {
+                        self.params.nam_is_loaded.store(true, Ordering::SeqCst);
+                        if let Some(mut text) = self.params.nam_status_text.try_write() {
+                            *text = String::from("NAM Loaded");
+                        }
+                        self.current_nam_model = Some(selected_model);
                     }
-                    self.current_nam_model = Some(selected_model);
-                }
-                Err(e) => {
-                    self.params.nam_is_loaded.store(false, Ordering::SeqCst);
-                    if let Some(mut text) = self.params.nam_status_text.try_write() {
-                         *text = format!("Error: {}", e);
+                    Err(e) => {
+                        self.params.nam_is_loaded.store(false, Ordering::SeqCst);
+                        if let Some(mut text) = self.params.nam_status_text.try_write() {
+                            *text = format!("Error: {}", e);
+                        }
+                        nih_log!("Failed to load NAM model: {}", e);
+                        self.current_nam_model = Some(selected_model);
                     }
-                    nih_log!("Failed to load NAM model: {}", e);
-                    self.current_nam_model = Some(selected_model);
                 }
             }
         }
@@ -690,11 +692,16 @@ impl Plugin for KickSynth {
 
         // 2. Generate mono synth signal for the Block
         let num_samples = buffer.samples();
+
+        #[cfg(feature = "nam")]
+        let mut nam_output_gains: Vec<f32> = Vec::with_capacity(num_samples);
+
         for sample_idx in 0..num_samples {
             #[cfg(debug_assertions)]
             {
                 self.debug_phase += 1.0 / self.sample_rate;
                 if self.debug_phase >= 0.5 {
+                    self.debug_phase -= 0.5;
                     self.trigger_note(0.8);
                     self.debug_release_timer = 0.2 * self.sample_rate;
                 }
@@ -781,8 +788,14 @@ impl Plugin for KickSynth {
                 }
             }
             
-            let input_gain_amp = util::db_to_gain_fast(params.nam_input_gain);
+            let input_gain_amp = {
+                #[cfg(feature = "nam")] { util::db_to_gain_fast(params.nam_input_gain) }
+                #[cfg(not(feature = "nam"))] { 1.0 }
+            };
             self.mono_buffer[sample_idx] = mono_sample * input_gain_amp;
+
+            #[cfg(feature = "nam")]
+            nam_output_gains.push(util::db_to_gain_fast(params.nam_output_gain));
         }
 
         // 2. Apply NAM Block
@@ -792,11 +805,16 @@ impl Plugin for KickSynth {
             &mut self.nam_output_buffer[0..num_samples],
         );
 
-        let output_gain_amp = util::db_to_gain_fast(self.params.nam_output_gain.smoothed.next());
+        #[cfg(not(feature = "nam"))]
+        self.nam_output_buffer[0..num_samples].copy_from_slice(&self.mono_buffer[0..num_samples]);
 
         // 3. Post-NAM: Stereoize and write to output
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
-            let driven = self.nam_output_buffer[sample_idx] * output_gain_amp;
+            let output_gain = {
+                #[cfg(feature = "nam")] { nam_output_gains[sample_idx] }
+                #[cfg(not(feature = "nam"))] { 1.0 }
+            };
+            let driven = self.nam_output_buffer[sample_idx] * output_gain;
             
             // Note: We use the current smoothed value of corrosion_amount for the second pass.
             // In a better implementation, we'd buffer the smoothed values too, but this is usually fine for parameters.
