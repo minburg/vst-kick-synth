@@ -111,6 +111,12 @@ pub struct KickSynth {
     #[cfg(feature = "nam")]
     nam_synth: nam::NamSynth,
     current_nam_model: Option<NamModel>,
+    /// Internal per-model output gain normalization (computed at load time, NOT user-controlled)
+    nam_calibration_gain: f32,
+    /// Internal per-model input pre-scale applied before the NAM block.
+    /// Shifts the saturation threshold so all models feel comparable at the same user input gain.
+    /// The output compensation for this shift is already folded into nam_calibration_gain.
+    nam_pre_input_scale: f32,
 
     mono_buffer: Vec<f32>,
     nam_output_buffer: Vec<f32>,
@@ -232,8 +238,8 @@ struct KickParams {
     #[id = "nam_input_gain"]
     pub nam_input_gain: FloatParam,
 
-    #[id = "nam_output_gain"]
-    pub nam_output_gain: FloatParam,
+    #[id = "output_gain"]
+    pub output_gain: FloatParam,
 
     #[id = "nam_model"]
     pub nam_model: EnumParam<NamModel>,
@@ -269,7 +275,7 @@ impl KickParams {
             bass_synth_mode: self.bass_synth_mode.value(),
             nam_active: self.nam_active.value(),
             nam_input_gain: self.nam_input_gain.value(),
-            nam_output_gain: self.nam_output_gain.value(),
+            output_gain: self.output_gain.value(),
             nam_model: self.nam_model.value(),
         }
     }
@@ -465,7 +471,7 @@ impl Default for KickParams {
             nam_active: BoolParam::new("NAM Active", false),
 
             nam_input_gain: FloatParam::new(
-                "Input Gain",
+                "NAM Input Gain",
                 0.0,
                 FloatRange::Linear {
                     min: -18.0,
@@ -475,8 +481,8 @@ impl Default for KickParams {
             .with_unit("dB")
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
 
-            nam_output_gain: FloatParam::new(
-                "Output Gain",
+            output_gain: FloatParam::new(
+                "Main Out",
                 0.0,
                 FloatRange::Linear {
                     min: -18.0,
@@ -570,6 +576,8 @@ impl Default for KickSynth {
             #[cfg(feature = "nam")]
             nam_synth: nam::NamSynth::new(44100.0, 2048),
             current_nam_model: None,
+            nam_calibration_gain: 1.0,
+            nam_pre_input_scale: 1.0,
 
             mono_buffer: Vec::with_capacity(2048),
             nam_output_buffer: Vec::with_capacity(2048),
@@ -595,8 +603,79 @@ struct SmoothedParams {
     release: f32,
     corrosion_amount: f32,
     nam_input_gain: f32,
-    nam_output_gain: f32,
+    output_gain: f32,
     bass_synth_mode: bool,
+}
+
+/// All NAM models are normalized to this integrated loudness (LUFS) after loading.
+/// -18 LUFS gives headroom above broadcast (-23) while still being loud enough for a kick plugin.
+#[cfg(feature = "nam")]
+const NAM_TARGET_LUFS: f32 = -18.0;
+
+/// Extracts `metadata.loudness` (LUFS) from a .nam JSON string.
+/// Returns `None` if the field is absent or cannot be parsed.
+/// Falls back to `NAM_TARGET_LUFS` so the calibration gain becomes 0 dB.
+#[cfg(feature = "nam")]
+fn parse_nam_loudness(content: &str) -> Option<f32> {
+    let key = "\"loudness\":";
+    let start = content.find(key)? + key.len();
+    let slice = content[start..].trim_start();
+    let end = slice
+        .find(|c: char| c == ',' || c == '}' || c.is_whitespace())
+        .unwrap_or(slice.len());
+    slice[..end].trim().parse::<f32>().ok()
+}
+
+/// Per-model fixed pre-gain (dB) applied to the signal *before* the NAM block.
+///
+/// This shifts each model's saturation onset to a comparable user input level.
+/// Without correction, JH24 (a clean tape model) doesn't start saturating until
+/// +15 dB user input, while the other models saturate around –15 dB — a 30 dB gap.
+///
+/// A +15 dB pre-boost on JH24 moves its saturation threshold to 0 dB user input,
+/// which is a musically useful middle ground: clean headroom below 0, warm saturation
+/// above, and heavy compression when driven hard — matching the feel of the other models.
+///
+/// The output impact of this pre-boost is compensated by subtracting the same dB value
+/// from `calibration_db` at model load time, so the overall output level stays at –12 dBFS.
+#[cfg(feature = "nam")]
+fn model_pre_input_db(model: NamModel) -> f32 {
+    match model {
+        NamModel::PhilipsEL3541D => 0.0,   // saturates at –15 dB, no shift needed
+        NamModel::CultureVulture => 0.0,   // saturates at –15 dB, no shift needed
+        NamModel::JH24           => 15.0,  // saturates at +15 dB → shift to 0 dB
+    }
+}
+
+/// Per-model empirical trim (dB) added on top of the loudness-based calibration.
+///
+/// WHY THIS EXISTS:
+/// `metadata.loudness` normalises each model relative to its own *training* DI level.
+/// Our synth's output amplitude at 0 dB input gain is unrelated to that training level,
+/// so models with different saturation curves still land at different output levels.
+/// Heavy saturators (Philips, Culture Vulture) are essentially self-limiting and stay
+/// consistent across all input gains. Tape / more-linear models (JH24) track input
+/// much more closely, so the loudness calibration alone over- or under-shoots.
+///
+/// These offsets are measured empirically: trigger the kick at 0 dB NAM input gain
+/// and read the peak meter. Target is –12 dBFS.
+///
+/// HOW TO RE-MEASURE after changing the synth or adding a new model:
+///   measured_db = peak meter reading at 0 dB input gain (with current calibration applied)
+///   new_trim = current_trim + (–12.0 – measured_db)
+///
+/// Measured values that produced these trims (all at 0 dB input gain, target –12 dBFS):
+///   PhilipsEL3541D : measured –12 dB  →  –5 dB trim  (no residual)
+///   CultureVulture : measured –11 dB  →  –2 dB trim
+///   JH24           : measured –15 dB  →  +3 dB trim  (model near saturation at 0 dB input
+///                      due to +15 dB pre-input boost; operating regime shift is expected)
+#[cfg(feature = "nam")]
+fn model_reference_trim_db(model: NamModel) -> f32 {
+    match model {
+        NamModel::PhilipsEL3541D => -5.0,
+        NamModel::CultureVulture => -2.0,
+        NamModel::JH24           =>  3.0,
+    }
 }
 
 impl Plugin for KickSynth {
@@ -710,6 +789,29 @@ impl Plugin for KickSynth {
                         if let Some(mut text) = self.params.nam_status_text.try_write() {
                             *text = String::from("NAM Loaded");
                         }
+                        // Layer 1 — loudness calibration: normalises the model relative to its
+                        // training DI level using the LUFS value baked into the .nam metadata.
+                        let loudness = parse_nam_loudness(_content).unwrap_or(NAM_TARGET_LUFS);
+                        let loudness_offset_db = NAM_TARGET_LUFS - loudness;
+
+                        // Layer 2 — reference trim: corrects the residual mismatch between the
+                        // training DI amplitude and our synth's output at 0 dB input gain.
+                        // Target after both layers: –12 dBFS peak at 0 dB input gain.
+                        let trim_db = model_reference_trim_db(selected_model);
+
+                        // Layer 3 — pre-input shift: a fixed boost applied *before* the model
+                        // that shifts the saturation onset to a comparable input level across
+                        // all models. The same amount is subtracted here so the output level
+                        // is unchanged in the linear range.
+                        let pre_input_db = model_pre_input_db(selected_model);
+                        self.nam_pre_input_scale = util::db_to_gain_fast(pre_input_db);
+
+                        let calibration_db = loudness_offset_db + trim_db - pre_input_db;
+                        self.nam_calibration_gain = util::db_to_gain_fast(calibration_db);
+                        nih_log!(
+                            "NAM calibration: loudness={:.2} LUFS → loudness offset={:.2} dB + trim={:.2} dB + pre-input={:.2} dB = {:.2} dB total",
+                            loudness, loudness_offset_db, trim_db, pre_input_db, calibration_db
+                        );
                         self.current_nam_model = Some(selected_model);
                     }
                     Err(e) => {
@@ -752,7 +854,9 @@ impl Plugin for KickSynth {
         let num_samples = buffer.samples();
 
         #[cfg(feature = "nam")]
-        let mut nam_output_gains: Vec<f32> = Vec::with_capacity(num_samples);
+        let mut output_gains: Vec<f32> = Vec::with_capacity(num_samples);
+        #[cfg(not(feature = "nam"))]
+        let mut output_gains: Vec<f32> = Vec::with_capacity(num_samples);
         let nam_active_value = self.params.nam_active.value();
 
         for sample_idx in 0..num_samples {
@@ -819,7 +923,7 @@ impl Plugin for KickSynth {
                 release: self.params.release.smoothed.next(),
                 corrosion_amount: self.params.corrosion_amount.smoothed.next(),
                 nam_input_gain: self.params.nam_input_gain.smoothed.next(),
-                nam_output_gain: self.params.nam_output_gain.smoothed.next(),
+                output_gain: self.params.output_gain.smoothed.next(),
                 bass_synth_mode: self.params.bass_synth_mode.value(),
             };
 
@@ -851,14 +955,15 @@ impl Plugin for KickSynth {
             }
 
             let input_gain_amp = if cfg!(feature = "nam") && nam_active_value {
-                util::db_to_gain_fast(params.nam_input_gain)
+                // User-controlled drive × per-model pre-input shift (shifts saturation onset)
+                util::db_to_gain_fast(params.nam_input_gain) * self.nam_pre_input_scale
             } else {
                 1.0
             };
             self.mono_buffer[sample_idx] = mono_sample * input_gain_amp;
 
-            #[cfg(feature = "nam")]
-            nam_output_gains.push(util::db_to_gain_fast(params.nam_output_gain));
+            // Collect smoothed master output gain for every sample, always (not just for NAM)
+            output_gains.push(util::db_to_gain_fast(params.output_gain));
         }
 
         // 2. Apply NAM Block if enabled and active
@@ -878,20 +983,20 @@ impl Plugin for KickSynth {
 
         // 3. Post-NAM: Stereoize and write to output
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
-            let output_gain = if cfg!(feature = "nam") && nam_active_value {
+            // NAM model calibration: internal, fixed per model, compensates for different model loudness
+            let calibration_gain = if nam_active_value {
                 #[cfg(feature = "nam")]
-                {
-                    nam_output_gains[sample_idx]
-                }
+                { self.nam_calibration_gain }
                 #[cfg(not(feature = "nam"))]
-                {
-                    1.0
-                }
+                { 1.0 }
             } else {
                 1.0
             };
 
-            let driven = self.nam_output_buffer[sample_idx] * output_gain;
+            // Master output trim: always applied, user-controlled
+            let master_gain = output_gains[sample_idx];
+
+            let driven = self.nam_output_buffer[sample_idx] * calibration_gain * master_gain;
 
             // Note: We use the current smoothed value of corrosion_amount for the second pass.
             // In a better implementation, we'd buffer the smoothed values too, but this is usually fine for parameters.

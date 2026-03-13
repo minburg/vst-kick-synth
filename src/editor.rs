@@ -155,7 +155,7 @@ fn emit_params_events(cx: &mut EventContext, params: &Arc<KickParams>, preset: &
     emit(cx, &params.bass_synth_mode, preset.bass_synth_mode);
     emit(cx, &params.nam_active, preset.nam_active);
     emit(cx, &params.nam_input_gain, preset.nam_input_gain);
-    emit(cx, &params.nam_output_gain, preset.nam_output_gain);
+    emit(cx, &params.output_gain, preset.output_gain);
     emit(cx, &params.nam_model, preset.nam_model);
 }
 
@@ -648,7 +648,7 @@ fn build_corrosion_pentagon(cx: &mut Context) {
 
 fn build_nam_triangle(cx: &mut Context) {
     ZStack::new(cx, |cx| {
-        Label::new(cx, "NAM")
+        Label::new(cx, "NAM & Out")
             .top(Stretch(0.7))
             .bottom(Stretch(0.3))
             .left(Stretch(1.0))
@@ -678,66 +678,15 @@ fn build_nam_triangle(cx: &mut Context) {
             // TOP ROW: Model Selector (Centered)
             HStack::new(cx, |cx| {
                 Element::new(cx).width(Stretch(1.0));
-                // Assuming you have a dropdown/knob for the EnumParam
                 SingleKnob::new(cx, Data::params, |p| &p.nam_model, false, 85.0);
                 Element::new(cx).width(Stretch(1.0));
             });
 
-            // BOTTOM ROW: Input and Output Gain
+            // BOTTOM ROW: NAM Input Gain and Master Out Level
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0).on_change(
-                    |cx, val| {
-                        // Link inversely: 1.0 - val
-                        let linked_val = 1.0 - val;
-                        cx.emit(ParamEvent::<FloatParam>::BeginSetParameter(unsafe {
-                            std::mem::transmute(&Data::params.get(cx).nam_output_gain)
-                        }));
-                        cx.emit(RawParamEvent::BeginSetParameter(
-                            Data::params.get(cx).nam_output_gain.as_ptr(),
-                        ));
-                        cx.emit(ParamEvent::<FloatParam>::SetParameterNormalized(
-                            unsafe { std::mem::transmute(&Data::params.get(cx).nam_output_gain) },
-                            linked_val,
-                        ));
-                        cx.emit(RawParamEvent::SetParameterNormalized(
-                            Data::params.get(cx).nam_output_gain.as_ptr(),
-                            linked_val,
-                        ));
-                        cx.emit(ParamEvent::<FloatParam>::EndSetParameter(unsafe {
-                            std::mem::transmute(&Data::params.get(cx).nam_output_gain)
-                        }));
-                        cx.emit(RawParamEvent::EndSetParameter(
-                            Data::params.get(cx).nam_output_gain.as_ptr(),
-                        ));
-                    },
-                );
+                SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0);
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.nam_output_gain, false, 85.0).on_change(
-                    |cx, val| {
-                        // Link inversely: 1.0 - val
-                        let linked_val = 1.0 - val;
-                        cx.emit(ParamEvent::<FloatParam>::BeginSetParameter(unsafe {
-                            std::mem::transmute(&Data::params.get(cx).nam_input_gain)
-                        }));
-                        cx.emit(RawParamEvent::BeginSetParameter(
-                            Data::params.get(cx).nam_input_gain.as_ptr(),
-                        ));
-                        cx.emit(ParamEvent::<FloatParam>::SetParameterNormalized(
-                            unsafe { std::mem::transmute(&Data::params.get(cx).nam_input_gain) },
-                            linked_val,
-                        ));
-                        cx.emit(RawParamEvent::SetParameterNormalized(
-                            Data::params.get(cx).nam_input_gain.as_ptr(),
-                            linked_val,
-                        ));
-                        cx.emit(ParamEvent::<FloatParam>::EndSetParameter(unsafe {
-                            std::mem::transmute(&Data::params.get(cx).nam_input_gain)
-                        }));
-                        cx.emit(RawParamEvent::EndSetParameter(
-                            Data::params.get(cx).nam_input_gain.as_ptr(),
-                        ));
-                    },
-                );
+                SingleKnob::new(cx, Data::params, |p| &p.output_gain, false, 85.0);
             });
         })
         .class("orange")

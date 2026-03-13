@@ -1,3 +1,9 @@
+/* nih-plug-vizia's theme.css forces :root { background-color: #fafafa } (white).
+   Override it here — style.css is loaded last so this wins. */
+/*:root {*/
+/*    background-color: #1a1a1a;*/
+/*}*/
+
 .main-gui {
     /*background-color: #1e1e1e;*/
     background-image: url("background_image.png");
@@ -423,7 +429,7 @@
 
 /* Preset UI */
 .preset-header {
-    background-color: rgba(0, 0, 0, 0.47);
+    background-color: rgba(0, 0, 0, 0);
     border-radius: 10px;
     padding: 10px;
 }
@@ -436,16 +442,18 @@
 
 .preset-dropdown {
     background-color: #2a2a2a;
-    color: #e6c372;
+    /*color: #e6c372;*/
     font-family: "Comfortaa";
     font-size: 16.0;
-    border-radius: 4px;
-    border-color: #c6a863;
+    /*border-radius: 4px;*/
+    /*border-color: #c6a863;*/
     border-width: 1px;
 }
 
 .preset-dropdown:hover {
-    border-color: #ffffff;
+    /*border-color: #ffffff;*/
+    /*background-color: #74355C;*/
+    /*color: #f18383;*/
 }
 
 .preset-button {
@@ -459,7 +467,10 @@
 }
 
 .preset-button:hover {
-    background-color: rgba(116, 53, 92, 0.7);
+    /*background-color: rgba(116, 53, 92, 0.7);*/
+
+    background-color: #74355C;
+    color: #f18383;
 }
 
 .preset-button:active {
@@ -470,12 +481,12 @@
 /* PickList Styling */
 
 picklist {
-    background-color: rgba(0, 0, 0, 0.47);
+    background-color: #74355C;
+    color: #f18383;
+
     border-color: #c6a863;
     border-width: 1px;
     border-radius: 4px;
-    color: #c6a863;
-    child-space: 10px;
     font-family: "Comfortaa";
     font-size: 14.0;
     min-height: 30px;
@@ -483,11 +494,19 @@ picklist {
 
 picklist:hover {
     border-color: #ef3939;
-    background-color: rgba(0, 0, 0, 0.6);
+    background-color: #74355C;
+    color: #f18383;
 }
 
 picklist .icon {
     color: #c6a863;
+}
+
+/* vizia's dark_theme.css gives every dropdown a #282828 background, which looks
+   light/white against the near-black plugin UI. Make it transparent so only
+   picklist's own background is visible. */
+picklist dropdown {
+    background-color: transparent;
 }
 
 picklist popup {
@@ -514,3 +533,24 @@ picklist popup label:checked {
     background-color: #512540;
     color: #c6a863;
 }
+
+/* nih-plug-vizia's theme.css hardcodes scrollview scrollbar { background-color: #dadada }
+   which shows as a bright white bar. Override it inside the picklist popup. */
+picklist popup scrollview scrollbar {
+    background-color: #1a1a1a;
+    border-radius: 2px;
+}
+
+picklist popup scrollview scrollbar .thumb {
+    background-color: #74355C;
+    border-radius: 2px;
+    min-width: 6px;
+    min-height: 20px;
+    transition: background-color 100ms;
+}
+
+picklist popup scrollview scrollbar .thumb:hover {
+    background-color: #c6a863;
+    transition: background-color 100ms;
+}
+

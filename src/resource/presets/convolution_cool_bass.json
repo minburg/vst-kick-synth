@@ -23,6 +23,6 @@
   "bass_synth_mode": true,
   "nam_active": true,
   "nam_input_gain": 18.0,
-  "nam_output_gain": -3.1752052,
+  "output_gain": 0.0,
   "nam_model": "JH24"
 }

@@ -23,6 +23,6 @@
   "bass_synth_mode": false,
   "nam_active": true,
   "nam_input_gain": -9.215999,
-  "nam_output_gain": 0.0,
+  "output_gain": 0.0,
   "nam_model": "CultureVulture"
 }

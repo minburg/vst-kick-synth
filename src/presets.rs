@@ -27,7 +27,8 @@ pub struct Preset {
     pub bass_synth_mode: bool,
     pub nam_active: bool,
     pub nam_input_gain: f32,
-    pub nam_output_gain: f32,
+    #[serde(default)]
+    pub output_gain: f32,
     pub nam_model: NamModel,
 }
 
@@ -58,7 +59,7 @@ impl Default for Preset {
             bass_synth_mode: false,
             nam_active: false,
             nam_input_gain: 0.0,
-            nam_output_gain: 0.0,
+            output_gain: 0.0,
             nam_model: NamModel::PhilipsEL3541D,
         }
     }
