@@ -15,6 +15,12 @@ This section is the heart of the kick sound, combining a classic pitch-swept sin
 #### **Core (Pitch)**
 The fundamental tone of the kick is shaped here.
 - **Tune:** Sets the fundamental frequency (the "note") of the kick.
+- **Mode:** Selects the oscillator waveform type. All modes stay within a low-harmonic, sub-focused character — think processed and filtered sine waves rather than raw harmonics:
+    1. **Sine:** A pure sine wave. Clean, classic, full control.
+    2. **Octave:** Sine blended with an octave-up partial (2×) at 50 %. Adds presence and punch in the 80–200 Hz sweep range. Both partials track the pitch envelope together.
+    3. **Fifth:** Sine blended with a perfect fifth (1.5×) at 35 %. Gives a tuned, musical sub character — like a resonant body instead of extra harmonics.
+    4. **Warm:** Sine passed through a gentle `tanh` soft-clipper. Adds only odd harmonics (3rd ≈ 8 %, 5th ≈ 1 %), similar to the warmth of a lightly driven tube stage.
+    5. **Sub:** Sine blended with a sub-octave (0.5×) at 40 %. Doubles the perceived low-end mass for deep, rumbling kicks.
 - **Sweep:** Controls the amount of downward pitch envelope. Higher values create a more pronounced "zap" or "click" at the start.
 - **Decay:** Determines how long it takes for the pitch to sweep from high to low.
 - **Instability:** Introduces subtle, analog-style pitch drift for a less sterile sound.
@@ -71,6 +77,33 @@ A built-in module for processing the sound through pre-trained neural network mo
 - **Input Gain:** Adjusts the level going into the NAM processor.
 - **Output Gain:** Trims the level coming out of the NAM processor.
 
+### 4. The Filter
+
+A high-quality, resonant filter with its own full ADSR envelope. It can be inserted at three different points in the signal chain, which dramatically changes how it interacts with the drive and effects stages.
+
+#### **Controls**
+- **Filter (ON/OFF):** Activates or bypasses the entire filter section.
+- **Type:** Selects the filter architecture:
+    - **LP 24:** 4-pole Moog Ladder lowpass. Warm and musical; self-oscillates at full resonance.
+    - **LP 12:** 2-pole TPT SVF lowpass. Lighter roll-off, more open sound.
+    - **HP 24:** 4-pole highpass based on the Moog Ladder topology.
+    - **HP 12:** 2-pole TPT SVF highpass.
+    - **BP 12:** 2-pole bandpass — isolates a frequency band.
+    - **Notch:** 2-pole band-reject — carves out a specific frequency.
+- **Position:** Where in the signal chain the filter is inserted:
+    - **Pre NAM:** Before the NAM model. Shapes what the neural model "hears" — tighter, darker results.
+    - **Post NAM:** After the NAM model, before Corrosion. The most common position for post-distortion tone shaping *(default)*.
+    - **Post All:** After all processing, on the stereo bus. Acts as a master tone control.
+- **Cutoff:** The base cutoff frequency (20 Hz – 20 kHz, logarithmically scaled).
+- **Resonance:** Emphasis at the cutoff frequency. At maximum with LP 24 / HP 24, the filter self-oscillates.
+- **Drive:** Pre-filter input gain that gently saturates the signal before it enters the filter, adding harmonic richness.
+- **Key Track:** When greater than 0 %, the cutoff tracks the MIDI note pitch, keeping the filter tonally consistent across notes.
+
+#### **Filter Envelope**
+- **Env Amount:** How many octaves the envelope shifts the cutoff (±4 octaves). Positive values open the filter on attack; negative values close it.
+- **Attack / Decay / Sustain / Release:** Standard ADSR controls for the filter cutoff sweep.
+- **Trigger / Gate:** In **Trigger** mode the envelope fires and completes its full A→D→R cycle independently of note length — the classic kick drum / 808 behaviour. In **Gate** mode the sustain is held until note-off.
+
 ---
 
 ## Technical Implementation
@@ -79,11 +112,15 @@ A built-in module for processing the sound through pre-trained neural network mo
 - **GUI:** The user interface is rendered using `vizia`, a declarative GUI toolkit for Rust that is part of the `nih-plug` ecosystem.
 - **Synthesis:** All DSP (Digital Signal Processing) is written in pure Rust, including the oscillators, envelopes, filters, and distortion algorithms.
 - **Signal Flow:**
-    1.  A sine oscillator and a texture generator run in parallel.
+    1.  A pitched oscillator (one of five waveform modes) and a texture generator run in parallel.
     2.  Their outputs are summed and processed by the amplitude ADSR envelope.
-    3.  The signal is then sent through the multi-mode **Drive** unit.
-    4.  (Optional) The signal is processed by the **NAM** module.
-    5.  Finally, the signal is passed through the **Corrosion** effect before being sent to the stereo outputs.
+    3.  *(Optional)* If the **Filter** is in **Pre NAM** position, it is applied here.
+    4.  The signal is then sent through the multi-mode **Drive** unit.
+    5.  *(Optional)* The signal is processed by the **NAM** module.
+    6.  *(Optional)* If the **Filter** is in **Post NAM** position, it is applied here.
+    7.  The signal passes through the **Corrosion** effect and is widened to stereo.
+    8.  *(Optional)* If the **Filter** is in **Post All** position, it is applied here as a master tone control.
+    9.  The master output gain is applied before the signal is sent to the stereo outputs.
 
 ---
 
