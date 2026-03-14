@@ -18,13 +18,14 @@ pub struct SingleKnob {
 }
 
 impl SingleKnob {
-    pub fn new<L, Params, P, FMap>(
-        cx: &mut Context,
+    pub fn new<'cx, L, Params, P, FMap>(
+        cx: &'cx mut Context,
         params: L,
         params_to_param: FMap,
         _centered: bool,
         size: f32,
-    ) -> Handle<'_, Self>
+        image_class: &'static str,
+    ) -> Handle<'cx, Self>
     where
         L: Lens<Target = Params> + Clone + Copy,
         Params: 'static,
@@ -66,7 +67,7 @@ impl SingleKnob {
 
                                 // Vintage Knob Image
                                 Element::new(cx)
-                                    .class("vintage-knob")
+                                    .class(image_class)
                                     .width(Stretch(1.0)) // Fills the parent Knob
                                     .height(Stretch(1.0))
                                     .border_radius(Pixels(size / 2.0))

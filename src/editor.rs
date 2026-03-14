@@ -1,5 +1,6 @@
 use crate::editor::single_knob::{SingleKnob, SingleKnobExt};
 use crate::util::gain_to_db;
+use crate::{FilterPosition, FilterType};
 use nih_plug::prelude::*;
 use nih_plug_vizia::assets::register_noto_sans_light;
 use nih_plug_vizia::vizia::image::load_from_memory;
@@ -29,6 +30,7 @@ pub const COMFORTAA: &str = "Comfortaa";
 
 const BG_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/kick_background_tint_cropped.png");
 const POTI_3_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/poti_3_fixed_small.png");
+const POTI_1_IMAGE_BYTES: &[u8] = include_bytes!("resource/images/poti_1_fixed_small.png");
 const INSTA_ICON_BYTES: &[u8] = include_bytes!("resource/images/instagram_icon.png");
 const SPOTIFY_ICON_BYTES: &[u8] = include_bytes!("resource/images/spotify_icon.png");
 
@@ -157,10 +159,24 @@ fn emit_params_events(cx: &mut EventContext, params: &Arc<KickParams>, preset: &
     emit(cx, &params.nam_input_gain, preset.nam_input_gain);
     emit(cx, &params.output_gain, preset.output_gain);
     emit(cx, &params.nam_model, preset.nam_model);
+
+    // Filter params
+    emit(cx, &params.filter_active, preset.filter_active);
+    emit(cx, &params.filter_type, preset.filter_type);
+    emit(cx, &params.filter_position, preset.filter_position);
+    emit(cx, &params.filter_cutoff, preset.filter_cutoff);
+    emit(cx, &params.filter_resonance, preset.filter_resonance);
+    emit(cx, &params.filter_env_amount, preset.filter_env_amount);
+    emit(cx, &params.filter_env_attack, preset.filter_env_attack);
+    emit(cx, &params.filter_env_decay, preset.filter_env_decay);
+    emit(cx, &params.filter_env_sustain, preset.filter_env_sustain);
+    emit(cx, &params.filter_env_release, preset.filter_env_release);
+    emit(cx, &params.filter_drive, preset.filter_drive);
+    emit(cx, &params.filter_key_track, preset.filter_key_track);
 }
 
 pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1400, 950))
+    ViziaState::new(|| (1400, 1100))
 }
 
 pub(crate) fn create(
@@ -186,6 +202,11 @@ pub(crate) fn create(
             Err(e) => nih_error!("Failed to load image: {}", e),
         }
 
+        match load_from_memory(POTI_1_IMAGE_BYTES) {
+            Ok(img) => cx.load_image("poti_1_fixed_small.png", img, ImageRetentionPolicy::Forever),
+            Err(e) => nih_error!("Failed to load image: {}", e),
+        }
+
         match load_from_memory(INSTA_ICON_BYTES) {
             Ok(img) => cx.load_image("insta.png", img, ImageRetentionPolicy::Forever),
             Err(e) => nih_error!("Failed to load image: {}", e),
@@ -205,7 +226,7 @@ pub(crate) fn create(
             peak_meter_l: peak_meter_l.clone(),
             peak_meter_r: peak_meter_r.clone(),
             factory_presets: presets::get_factory_presets(),
-            selected_preset: 0,
+            selected_preset: 14, // Vinyl Soul
         }
         .build(cx);
 
@@ -256,7 +277,10 @@ pub(crate) fn create(
                         .class("zone-source");
                 })
                 .width(Stretch(1.0))
-                .height(Stretch(0.9));
+                .height(Stretch(0.73));
+
+                // ── FILTER SECTION ────────────────────────────────────────────
+                build_filter_section(&params, cx);
             })
             .width(Stretch(1.0))
             .height(Stretch(1.0))
@@ -287,21 +311,35 @@ fn build_pitch_core_diamond(cx: &mut Context) {
             // TOP ROW: Tune (Centered)
             HStack::new(cx, |cx| {
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.tune, false, 85.0);
+                SingleKnob::new(cx, Data::params, |p| &p.tune, false, 85.0, "vintage-knob");
                 Element::new(cx).width(Stretch(1.0));
             });
 
             // MIDDLE ROW: Drift & Decay (Pushed to edges)
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.analog_variation, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.analog_variation,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.pitch_decay, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.pitch_decay,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
             });
 
             // BOTTOM ROW: Sweep (Centered)
             HStack::new(cx, |cx| {
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.sweep, false, 85.0);
+                SingleKnob::new(cx, Data::params, |p| &p.sweep, false, 85.0, "vintage-knob");
                 Element::new(cx).width(Stretch(1.0));
             });
         })
@@ -329,12 +367,26 @@ fn build_texture_pentagon(cx: &mut Context) {
         VStack::new(cx, |cx| {
             // TOP ROW: Tex Type (Top-Left) and Variation (Top-Right)
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.tex_type, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.tex_type,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
 
                 // This spring sits between the knobs, pushing them to the far left and right edges
                 Element::new(cx).width(Stretch(1.0));
 
-                SingleKnob::new(cx, Data::params, |p| &p.tex_variation, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.tex_variation,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
             });
 
             // MIDDLE ROW: An empty vertical spring to push the top and bottom rows apart
@@ -342,12 +394,26 @@ fn build_texture_pentagon(cx: &mut Context) {
 
             // BOTTOM ROW: Tex Tone (Bottom-Left) and Tex Decay (Bottom-Right)
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.tex_tone, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.tex_tone,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
 
                 // Another spring in the middle pushing these to the bottom corners
                 Element::new(cx).width(Stretch(1.0));
 
-                SingleKnob::new(cx, Data::params, |p| &p.tex_decay, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.tex_decay,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
             });
         })
         .height(Stretch(1.0))
@@ -355,13 +421,20 @@ fn build_texture_pentagon(cx: &mut Context) {
 
         // LAYER 3: The Giant Center Knob (Foreground)
         // By making it a direct child of the ZStack, it overlaps the VStack without expanding its rows
-        SingleKnob::new(cx, Data::params, |p| &p.tex_amt, false, 180.0)
-            .class("large-center-knob")
-            // Apply equal springs to all sides to perfectly center it within the ZStack
-            .top(Stretch(1.0))
-            .bottom(Stretch(1.0))
-            .left(Stretch(1.0))
-            .right(Stretch(1.0));
+        SingleKnob::new(
+            cx,
+            Data::params,
+            |p| &p.tex_amt,
+            false,
+            180.0,
+            "vintage-knob",
+        )
+        .class("large-center-knob")
+        // Apply equal springs to all sides to perfectly center it within the ZStack
+        .top(Stretch(1.0))
+        .bottom(Stretch(1.0))
+        .left(Stretch(1.0))
+        .right(Stretch(1.0));
     })
     .top(Stretch(0.04))
     .bottom(Stretch(0.04))
@@ -376,7 +449,7 @@ fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
 
                 build_preset_header(cx);
 
-                Label::new(cx, "v0.2.0").class("header-version-title")
+                Label::new(cx, "v0.2.1").class("header-version-title")
                     .height(Stretch(0.5))
                     .width(Stretch(0.2))
                     .left(Stretch(0.2))
@@ -581,9 +654,16 @@ fn build_drive_pill(cx: &mut Context) {
             .class("pentagon-label");
 
         HStack::new(cx, |cx| {
-            SingleKnob::new(cx, Data::params, |p| &p.drive_model, false, 85.0);
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.drive_model,
+                false,
+                85.0,
+                "vintage-knob",
+            );
 
-            SingleKnob::new(cx, Data::params, |p| &p.drive, false, 85.0);
+            SingleKnob::new(cx, Data::params, |p| &p.drive, false, 85.0, "vintage-knob");
         })
         .class("orange")
         .height(Stretch(0.5));
@@ -608,12 +688,26 @@ fn build_corrosion_pentagon(cx: &mut Context) {
         VStack::new(cx, |cx| {
             // TOP ROW: Frequency (Top-Left) and Width (Top-Right)
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.corrosion_frequency, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.corrosion_frequency,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
 
                 // This spring sits between the knobs, pushing them to the far left and right edges
                 Element::new(cx).width(Stretch(1.0));
 
-                SingleKnob::new(cx, Data::params, |p| &p.corrosion_width, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.corrosion_width,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
             });
 
             // MIDDLE ROW: The main Corrosion Amount (Center)
@@ -621,20 +715,41 @@ fn build_corrosion_pentagon(cx: &mut Context) {
                 Element::new(cx).width(Stretch(1.0)); // Pushes right
 
                 // The master control for the section
-                SingleKnob::new(cx, Data::params, |p| &p.corrosion_amount, false, 120.0)
-                    .class("large-center-knob");
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.corrosion_amount,
+                    false,
+                    120.0,
+                    "vintage-knob",
+                )
+                .class("large-center-knob");
 
                 Element::new(cx).width(Stretch(1.0)); // Pushes left
             });
 
             // BOTTOM ROW: Noise Blend (Bottom-Left) and Stereo (Bottom-Right)
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.corrosion_noise_blend, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.corrosion_noise_blend,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
 
                 // Another spring in the middle pushing these to the bottom corners
                 Element::new(cx).width(Stretch(1.0));
 
-                SingleKnob::new(cx, Data::params, |p| &p.corrosion_stereo, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.corrosion_stereo,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
             });
         })
         .height(Stretch(1.0))
@@ -678,15 +793,36 @@ fn build_nam_triangle(cx: &mut Context) {
             // TOP ROW: Model Selector (Centered)
             HStack::new(cx, |cx| {
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.nam_model, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.nam_model,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
                 Element::new(cx).width(Stretch(1.0));
             });
 
             // BOTTOM ROW: NAM Input Gain and Master Out Level
             HStack::new(cx, |cx| {
-                SingleKnob::new(cx, Data::params, |p| &p.nam_input_gain, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.nam_input_gain,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.output_gain, false, 85.0);
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.output_gain,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
             });
         })
         .class("orange")
@@ -818,6 +954,172 @@ where
         cx.emit(ParamEvent::EndSetParameter(param_static));
         cx.emit(RawParamEvent::EndSetParameter(ptr));
     })
+}
+
+fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
+    HStack::new(cx, |cx| {
+        // ── Label + ON/OFF toggle ─────────────────────────────────────────
+        VStack::new(cx, |cx| {
+            Label::new(cx, "Filter")
+                .class("pentagon-label")
+                .child_space(Stretch(1.0))
+                .height(Stretch(1.0));
+
+            Element::new(cx).height(Stretch(0.3));
+
+
+            create_toggle_button(
+                cx,
+                "ON",
+                Data::params.map(|p| p.filter_active.value()),
+                params,
+                |p| &p.filter_active,
+                "filter-button",
+                "active",
+            )
+            .height(Pixels(50.0))
+            .width(Stretch(3.0))
+            .child_space(Stretch(1.0));
+        })
+        .child_space(Stretch(1.0))
+        .width(Stretch(0.22))
+        .class("filter-ctrl-group");
+
+        // ── Type + Position enum knobs ────────────────────────────────────
+        HStack::new(cx, |cx| {
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_type,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+            .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_position,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+            .width(Stretch(1.0));
+        })
+        .width(Stretch(0.5))
+        // .child_space(Stretch(1.0))
+        .class("filter-ctrl-group");
+
+        // ── Core params: Cutoff, Resonance, Drive, Key Track ──────────────
+        HStack::new(cx, |cx| {
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_cutoff,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_resonance,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_env_trigger,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_key_track,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+        })
+            .width(Stretch(1.0))
+            // .child_space(Stretch(1.0))
+            .class("filter-ctrl-group");
+
+        // ── Filter Envelope: Amount, A, D, S, R ──────────────────────────
+        HStack::new(cx, |cx| {
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_env_amount,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_env_attack,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_env_decay,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_env_sustain,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_env_release,
+                false,
+                85.0,
+                "vintage-knob-poti1",
+            )
+                .width(Stretch(1.0));
+        })
+            .width(Stretch(1.2))
+            // .child_space(Stretch(1.0))
+            .class("filter-ctrl-group");
+
+
+    })
+    // .child_space(Stretch(1.0))
+    .col_between(Pixels(10.0))
+    .width(Stretch(1.0))
+    .height(Stretch(0.18))
+    .class("filter-section");
 }
 
 fn build_preset_header(cx: &mut Context) {

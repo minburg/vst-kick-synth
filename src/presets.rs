@@ -1,5 +1,5 @@
 use serde::{Serialize, Deserialize};
-use crate::NamModel;
+use crate::{NamModel, FilterType, FilterPosition};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Preset {
@@ -30,7 +30,45 @@ pub struct Preset {
     #[serde(default)]
     pub output_gain: f32,
     pub nam_model: NamModel,
+    // Filter — all fields have #[serde(default)] so existing presets without
+    // these keys simply use the defaults (filter off, LP24, PostNam, etc.).
+    #[serde(default)]
+    pub filter_active: bool,
+    #[serde(default)]
+    pub filter_type: FilterType,
+    #[serde(default)]
+    pub filter_position: FilterPosition,
+    #[serde(default = "default_filter_cutoff")]
+    pub filter_cutoff: f32,
+    #[serde(default = "default_filter_resonance")]
+    pub filter_resonance: f32,
+    #[serde(default = "default_filter_env_amount")]
+    pub filter_env_amount: f32,
+    #[serde(default = "default_filter_env_attack")]
+    pub filter_env_attack: f32,
+    #[serde(default = "default_filter_env_decay")]
+    pub filter_env_decay: f32,
+    #[serde(default)]
+    pub filter_env_sustain: f32,
+    #[serde(default = "default_filter_env_release")]
+    pub filter_env_release: f32,
+    /// true = trigger mode (fire-and-forget, best for kick drums);
+    /// false = gate mode (sustain held until note-off).
+    #[serde(default = "default_filter_env_trigger")]
+    pub filter_env_trigger: bool,
+    #[serde(default)]
+    pub filter_drive: f32,
+    #[serde(default)]
+    pub filter_key_track: f32,
 }
+
+fn default_filter_cutoff()      -> f32 { 2000.0 }
+fn default_filter_resonance()   -> f32 { 0.3 }
+fn default_filter_env_amount()  -> f32 { 2.0 }
+fn default_filter_env_attack()  -> f32 { 5.0 }
+fn default_filter_env_decay()   -> f32 { 300.0 }
+fn default_filter_env_release() -> f32 { 200.0 }
+fn default_filter_env_trigger() -> bool { true }
 
 impl Default for Preset {
     fn default() -> Self {
@@ -61,6 +99,19 @@ impl Default for Preset {
             nam_input_gain: 0.0,
             output_gain: 0.0,
             nam_model: NamModel::PhilipsEL3541D,
+            filter_active: false,
+            filter_type: FilterType::LP24,
+            filter_position: FilterPosition::PostNam,
+            filter_cutoff: 2000.0,
+            filter_resonance: 0.3,
+            filter_env_amount: 2.0,
+            filter_env_attack: 5.0,
+            filter_env_decay: 300.0,
+            filter_env_sustain: 0.0,
+            filter_env_release: 200.0,
+            filter_env_trigger: true,
+            filter_drive: 0.0,
+            filter_key_track: 0.0,
         }
     }
 }

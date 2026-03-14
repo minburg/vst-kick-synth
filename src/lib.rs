@@ -16,6 +16,9 @@ mod editor;
 mod presets;
 #[cfg(feature = "nam")]
 mod nam;
+mod filter;
+pub use filter::{FilterType, FilterPosition};
+use filter::FilterEngine;
 
 const NAM_MODEL_PHILIPS: &str = include_str!("resource/nam/Philips_EL3541D.nam");
 const NAM_MODEL_CULTURE_VULTURE: &str =
@@ -117,6 +120,13 @@ pub struct KickSynth {
     /// Shifts the saturation threshold so all models feel comparable at the same user input gain.
     /// The output compensation for this shift is already folded into nam_calibration_gain.
     nam_pre_input_scale: f32,
+
+    /// Filter engine: Moog Ladder + TPT SVF, stereo, with its own ADSR envelope.
+    filter_engine: FilterEngine,
+    /// Cached last filter position — used to detect changes and clear stale state.
+    last_filter_position: FilterPosition,
+    /// Cached last filter type — used to detect changes and clear stale state.
+    last_filter_type: FilterType,
 
     mono_buffer: Vec<f32>,
     nam_output_buffer: Vec<f32>,
@@ -246,6 +256,58 @@ struct KickParams {
 
     pub nam_is_loaded: AtomicBool,
     pub nam_status_text: Arc<RwLock<String>>,
+
+    // ── Filter Engine ─────────────────────────────────────────────────────────
+    #[id = "filter_active"]
+    pub filter_active: BoolParam,
+
+    /// LP24 / LP12 / HP24 / HP12 / BP12 / Notch
+    #[id = "filter_type"]
+    pub filter_type: EnumParam<FilterType>,
+
+    /// Where in the signal chain the filter is inserted.
+    #[id = "filter_position"]
+    pub filter_position: EnumParam<FilterPosition>,
+
+    /// Base cutoff frequency in Hz (log-skewed, 20–20 000 Hz).
+    #[id = "filter_cutoff"]
+    pub filter_cutoff: FloatParam,
+
+    /// Resonance / Q (0.0 = clean, 1.0 = self-oscillation for LP24/HP24).
+    #[id = "filter_resonance"]
+    pub filter_resonance: FloatParam,
+
+    /// How many octaves the ADSR envelope moves the cutoff.
+    /// Positive = opens on attack; negative = closes on attack.
+    #[id = "filter_env_amount"]
+    pub filter_env_amount: FloatParam,
+
+    #[id = "filter_env_attack"]
+    pub filter_env_attack: FloatParam,
+
+    #[id = "filter_env_decay"]
+    pub filter_env_decay: FloatParam,
+
+    #[id = "filter_env_sustain"]
+    pub filter_env_sustain: FloatParam,
+
+    #[id = "filter_env_release"]
+    pub filter_env_release: FloatParam,
+
+    /// When true (default): the filter envelope fires and completes its full
+    /// A→D→R cycle on its own, independent of note length — like Kick 2/3 or
+    /// the Roland 808.  When false: classic gate behaviour (sustain held until
+    /// note-off, then release).
+    #[id = "filter_env_trigger"]
+    pub filter_env_trigger: BoolParam,
+
+    /// Pre-filter gain (0 = clean, higher = more harmonic saturation).
+    #[id = "filter_drive"]
+    pub filter_drive: FloatParam,
+
+    /// How much the MIDI note frequency shifts the cutoff (0 = off, 1 = full).
+    #[id = "filter_key_track"]
+    pub filter_key_track: FloatParam,
 }
 
 impl KickParams {
@@ -277,6 +339,19 @@ impl KickParams {
             nam_input_gain: self.nam_input_gain.value(),
             output_gain: self.output_gain.value(),
             nam_model: self.nam_model.value(),
+            filter_active: self.filter_active.value(),
+            filter_type: self.filter_type.value(),
+            filter_position: self.filter_position.value(),
+            filter_cutoff: self.filter_cutoff.value(),
+            filter_resonance: self.filter_resonance.value(),
+            filter_env_amount: self.filter_env_amount.value(),
+            filter_env_attack: self.filter_env_attack.value(),
+            filter_env_decay: self.filter_env_decay.value(),
+            filter_env_sustain: self.filter_env_sustain.value(),
+            filter_env_release: self.filter_env_release.value(),
+            filter_env_trigger: self.filter_env_trigger.value(),
+            filter_drive: self.filter_drive.value(),
+            filter_key_track: self.filter_key_track.value(),
         }
     }
 }
@@ -319,7 +394,7 @@ impl Default for KickParams {
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
 
-            drive: FloatParam::new("Gain", 0.33, FloatRange::Linear { min: 0.0, max: 1.0 })
+            drive: FloatParam::new("Gain", 0.2, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
@@ -340,7 +415,7 @@ impl Default for KickParams {
                 _ => "Unknown".to_string(),
             })),
 
-            tex_amt: FloatParam::new("Amount", 0.2, FloatRange::Linear { min: 0.0, max: 1.0 })
+            tex_amt: FloatParam::new("Amount", 0.4, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_unit("%")
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
@@ -372,7 +447,7 @@ impl Default for KickParams {
 
             tex_type: IntParam::new(
                 "Type",
-                1i32,
+                5i32,
                 IntRange::Linear {
                     min: 1i32,
                     max: 6i32,
@@ -388,7 +463,7 @@ impl Default for KickParams {
                 _ => "Unknown".to_string(),
             })),
 
-            tex_tone: FloatParam::new("Tone", 0.5, FloatRange::Linear { min: 0.0, max: 1.0 })
+            tex_tone: FloatParam::new("Tone", 0.3, FloatRange::Linear { min: 0.0, max: 1.0 })
                 .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             attack: FloatParam::new(
@@ -419,7 +494,7 @@ impl Default for KickParams {
                 128.0,
                 FloatRange::Linear {
                     min: 10.0,
-                    max: 1000.0,
+                    max: 2000.0,
                 },
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
@@ -495,6 +570,119 @@ impl Default for KickParams {
             nam_model: EnumParam::new("Model", NamModel::PhilipsEL3541D),
             nam_is_loaded: AtomicBool::new(false),
             nam_status_text: Arc::new(RwLock::new(String::from("No model loaded"))),
+
+            // ── Filter Engine ─────────────────────────────────────────────────
+            filter_active: BoolParam::new("Filter", false),
+
+            filter_type: EnumParam::new("Filter Type", FilterType::LP24),
+
+            filter_position: EnumParam::new("Filter Position", FilterPosition::PostNam),
+
+            filter_cutoff: FloatParam::new(
+                "Filter Cutoff",
+                1500.0,
+                FloatRange::Skewed {
+                    min: 20.0,
+                    max: 20_000.0,
+                    factor: FloatRange::skew_factor(-2.0),
+                },
+            )
+            .with_value_to_string(formatters::v2s_f32_hz_then_khz(1))
+            .with_smoother(SmoothingStyle::Logarithmic(30.0)),
+
+            filter_resonance: FloatParam::new(
+                "Resonance",
+                0.16,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_value_to_string(formatters::v2s_f32_rounded(2))
+            .with_smoother(SmoothingStyle::Linear(20.0)),
+
+            filter_env_amount: FloatParam::new(
+                "Env Amount",
+                4.0,
+                // ±4 octaves covers every practical kick drum sweep (e.g. 300 Hz → 4.8 kHz).
+                // The previous ±10 oct range allowed the filter to be slammed against the
+                // Nyquist ceiling, producing a loud high-pitched screech at moderate resonance.
+                FloatRange::Linear { min: -4.0, max: 4.0 },
+            )
+            .with_unit(" oct")
+            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+
+            filter_env_attack: FloatParam::new(
+                "Flt Attack",
+                0.1,
+                FloatRange::Skewed {
+                    min: 0.1,
+                    max: 500.0,
+                    factor: FloatRange::skew_factor(-2.0),
+                },
+            )
+            .with_unit(" ms")
+            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+
+            filter_env_decay: FloatParam::new(
+                "Flt Decay",
+                230.0,
+                FloatRange::Skewed {
+                    min: 5.0,
+                    max: 2000.0,
+                    factor: FloatRange::skew_factor(-2.0),
+                },
+            )
+            .with_unit(" ms")
+            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+
+            filter_env_sustain: FloatParam::new(
+                "Flt Sustain",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            filter_env_release: FloatParam::new(
+                "Flt Release",
+                200.0,
+                FloatRange::Skewed {
+                    min: 5.0,
+                    max: 2000.0,
+                    factor: FloatRange::skew_factor(-2.0),
+                },
+            )
+            .with_unit(" ms")
+            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+
+            // Trigger mode ON by default: the filter envelope always completes
+            // its A→D→R cycle on its own, independent of note length.
+            // Set to false for classic gate/synth behaviour.
+            filter_env_trigger: BoolParam::new("Filter Trigger", true)
+                .with_value_to_string(Arc::new(|v| {
+                    if v { "Trigger".to_string() } else { "Gate".to_string() }
+                }))
+                .with_string_to_value(Arc::new(|s| {
+                    match s.trim().to_lowercase().as_str() {
+                        "trigger" | "on" | "true" => Some(true),
+                        "gate" | "off" | "false" => Some(false),
+                        _ => None,
+                    }
+                })),
+
+            filter_drive: FloatParam::new(
+                "Filter Drive",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 5.0 },
+            )
+            .with_unit(" dB")
+            .with_value_to_string(formatters::v2s_f32_rounded(1)),
+
+            filter_key_track: FloatParam::new(
+                "Key Track",
+                0.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
         }
     }
 }
@@ -578,6 +766,10 @@ impl Default for KickSynth {
             current_nam_model: None,
             nam_calibration_gain: 1.0,
             nam_pre_input_scale: 1.0,
+
+            filter_engine: FilterEngine::default(),
+            last_filter_position: FilterPosition::PostNam,
+            last_filter_type: FilterType::LP24,
 
             mono_buffer: Vec::with_capacity(2048),
             nam_output_buffer: Vec::with_capacity(2048),
@@ -683,7 +875,7 @@ impl Plugin for KickSynth {
     const VENDOR: &'static str = "Convolution DEV";
     const URL: &'static str = "https://github.com/minburg/vst-kick-synth";
     const EMAIL: &'static str = "email@example.com";
-    const VERSION: &'static str = "0.2.0";
+    const VERSION: &'static str = "0.2.1";
 
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
         main_input_channels: NonZeroU32::new(2),
@@ -759,6 +951,7 @@ impl Plugin for KickSynth {
         corrosion_state.sine_phase = 0.0;
         corrosion_state.bp_l = [0.0; 2];
         corrosion_state.bp_r = [0.0; 2];
+        self.filter_engine.clear();
     }
 
     fn process(
@@ -852,6 +1045,26 @@ impl Plugin for KickSynth {
 
         // 2. Generate mono synth signal for the Block
         let num_samples = buffer.samples();
+
+        // Filter: read block-rate params once; per-sample smoothed values (cutoff,
+        // resonance) are consumed inside the individual filter processing loops below.
+        let filter_active   = self.params.filter_active.value();
+        let filter_type     = self.params.filter_type.value();
+        let filter_position = self.params.filter_position.value();
+        let filter_env_amount  = self.params.filter_env_amount.value();
+        let filter_env_attack  = self.params.filter_env_attack.value();
+        let filter_env_decay   = self.params.filter_env_decay.value();
+        let filter_env_sustain = self.params.filter_env_sustain.value();
+        let filter_env_release = self.params.filter_env_release.value();
+        let filter_drive     = self.params.filter_drive.value();
+        let filter_key_track = self.params.filter_key_track.value();
+        let filter_midi_note = self.voice.midi_note;
+        // Clear stale integrator state whenever the type or position changes.
+        if filter_type != self.last_filter_type || filter_position != self.last_filter_position {
+            self.filter_engine.clear();
+            self.last_filter_type = filter_type;
+            self.last_filter_position = filter_position;
+        }
 
         #[cfg(feature = "nam")]
         let mut output_gains: Vec<f32> = Vec::with_capacity(num_samples);
@@ -966,7 +1179,22 @@ impl Plugin for KickSynth {
             output_gains.push(util::db_to_gain_fast(params.output_gain));
         }
 
-        // 2. Apply NAM Block if enabled and active
+        // Filter — PreNam position: applied after synthesis, before NAM saturation.
+        // Shapes the tone going INTO the model — tighter, darker results.
+        if filter_active && filter_position == FilterPosition::PreNam {
+            for i in 0..num_samples {
+                let cutoff    = self.params.filter_cutoff.smoothed.next();
+                let resonance = self.params.filter_resonance.smoothed.next();
+                self.mono_buffer[i] = self.filter_engine.process_mono(
+                    self.mono_buffer[i], self.sample_rate, filter_type,
+                    cutoff, resonance, filter_env_amount,
+                    filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
+                    filter_drive, filter_midi_note, filter_key_track,
+                );
+            }
+        }
+
+        // 3. Apply NAM Block if enabled and active
         #[cfg(feature = "nam")]
         if nam_active_value {
             self.nam_synth.process_block(
@@ -980,6 +1208,21 @@ impl Plugin for KickSynth {
         }
         #[cfg(not(feature = "nam"))]
         self.nam_output_buffer[0..num_samples].copy_from_slice(&self.mono_buffer[0..num_samples]);
+
+        // Filter — PostNam position: applied after NAM, before Corrosion.
+        // Most common use: post-distortion roll-off / tonal shaping.
+        if filter_active && filter_position == FilterPosition::PostNam {
+            for i in 0..num_samples {
+                let cutoff    = self.params.filter_cutoff.smoothed.next();
+                let resonance = self.params.filter_resonance.smoothed.next();
+                self.nam_output_buffer[i] = self.filter_engine.process_mono(
+                    self.nam_output_buffer[i], self.sample_rate, filter_type,
+                    cutoff, resonance, filter_env_amount,
+                    filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
+                    filter_drive, filter_midi_note, filter_key_track,
+                );
+            }
+        }
 
         // 3. Post-NAM: Stereoize and write to output
         for (sample_idx, channel_samples) in buffer.iter_samples().enumerate() {
@@ -1000,13 +1243,28 @@ impl Plugin for KickSynth {
 
             // Note: We use the current smoothed value of corrosion_amount for the second pass.
             // In a better implementation, we'd buffer the smoothed values too, but this is usually fine for parameters.
-            let (out_l, out_r) = Self::apply_corrosion(
+            let (mut out_l, mut out_r) = Self::apply_corrosion(
                 self.sample_rate,
                 driven,
                 self.params.corrosion_amount.value(),
                 &self.corrosion,
                 &self.params,
             );
+
+            // Filter — PostAll position: applied on the stereo bus after Corrosion.
+            // Acts as a master filter / tone control on the full processed signal.
+            if filter_active && filter_position == FilterPosition::PostAll {
+                let cutoff    = self.params.filter_cutoff.smoothed.next();
+                let resonance = self.params.filter_resonance.smoothed.next();
+                let (fl, fr) = self.filter_engine.process_stereo(
+                    out_l, out_r, self.sample_rate, filter_type,
+                    cutoff, resonance, filter_env_amount,
+                    filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
+                    filter_drive, filter_midi_note, filter_key_track,
+                );
+                out_l = fl;
+                out_r = fr;
+            }
 
             let abs_l = out_l.abs();
             if abs_l > max_amplitude_in_block_l {
@@ -1369,6 +1627,15 @@ impl KickSynth {
 
         self.voice.tex_env_phase = EnvelopePhase::Decay;
         self.voice.tex_env_value = 1.0;
+        // Set trigger/gate mode from the param, then fire the filter envelope.
+        // Always triggered regardless of whether the filter is currently active
+        // so it's already in sync if the user enables it mid-session.
+        self.filter_engine.envelope.mode = if self.params.filter_env_trigger.value() {
+            crate::filter::FilterEnvMode::Trigger
+        } else {
+            crate::filter::FilterEnvMode::Gate
+        };
+        self.filter_engine.trigger(velocity);
     }
 
     fn release_note(&mut self) {
@@ -1383,6 +1650,11 @@ impl KickSynth {
             && self.voice.tex_env_phase != EnvelopePhase::Release
         {
             self.voice.tex_env_phase = EnvelopePhase::Release;
+        }
+        // In trigger mode the filter envelope completes on its own — note-off
+        // must not interrupt it or the filter would snap shut on short notes.
+        if !self.params.filter_env_trigger.value() {
+            self.filter_engine.release();
         }
     }
 
