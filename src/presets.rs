@@ -5,6 +5,7 @@ use crate::{NamModel, FilterType, FilterPosition};
 pub struct Preset {
     pub name: String,
     pub tune: f32,
+    pub waveform: i32,
     pub sweep: f32,
     pub pitch_decay: f32,
     pub drive: f32,
@@ -75,6 +76,7 @@ impl Default for Preset {
         Self {
             name: "Default".to_string(),
             tune: 44.0,
+            waveform: 1,
             sweep: 239.0,
             pitch_decay: 100.0,
             drive: 0.33,

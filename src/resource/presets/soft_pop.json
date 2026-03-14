@@ -1,6 +1,7 @@
 {
     "name": "Soft Pop",
     "tune": 55.0,
+    "waveform": 1,
     "sweep": 100.0,
     "pitch_decay": 100.0,
     "drive": 0.1,

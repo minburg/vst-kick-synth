@@ -1,6 +1,7 @@
 {
     "name": "Deep House Thump",
     "tune": 42.0,
+    "waveform": 1,
     "sweep": 300.0,
     "pitch_decay": 80.0,
     "drive": 0.2,

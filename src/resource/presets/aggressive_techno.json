@@ -1,6 +1,7 @@
 {
     "name": "Aggressive Techno",
     "tune": 48.0,
+    "waveform": 1,
     "sweep": 600.0,
     "pitch_decay": 100.0,
     "drive": 0.6,

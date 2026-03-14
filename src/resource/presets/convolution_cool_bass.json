@@ -1,6 +1,7 @@
 {
   "name": "Convolution Cool Bass",
   "tune": 44.0,
+  "waveform": 1,
   "sweep": 138.59991,
   "pitch_decay": 100.00016,
   "drive": 0.28979984,

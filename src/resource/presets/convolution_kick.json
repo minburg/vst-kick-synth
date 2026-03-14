@@ -1,6 +1,7 @@
 {
   "name": "Convolution Kick",
   "tune": 43.607994,
+  "waveform": 1,
   "sweep": 210.00069,
   "pitch_decay": 64.65708,
   "drive": 0.1134,

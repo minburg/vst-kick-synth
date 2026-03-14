@@ -1,6 +1,7 @@
 {
   "name": "Convolution Hihat",
   "tune": 78.888016,
+  "waveform": 1,
   "sweep": 470.40002,
   "pitch_decay": 5.0,
   "drive": 0.0,

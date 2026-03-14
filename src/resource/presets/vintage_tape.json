@@ -1,6 +1,7 @@
 {
     "name": "Vintage Tape",
     "tune": 44.0,
+    "waveform": 1,
     "sweep": 239.0,
     "pitch_decay": 100.0,
     "drive": 0.5,

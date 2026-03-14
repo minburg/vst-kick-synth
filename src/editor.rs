@@ -131,6 +131,7 @@ fn emit_params_events(cx: &mut EventContext, params: &Arc<KickParams>, preset: &
     }
 
     emit(cx, &params.tune, preset.tune);
+    emit(cx, &params.waveform, preset.waveform);
     emit(cx, &params.sweep, preset.sweep);
     emit(cx, &params.pitch_decay, preset.pitch_decay);
     emit(cx, &params.drive, preset.drive);
@@ -250,7 +251,7 @@ pub(crate) fn create(
 
                     // ZONE 1: THE SOURCE (Generators)
                     VStack::new(cx, |cx| {
-                        build_pitch_core_diamond(cx);
+                        build_pitch_core_pentagon(cx);
                         build_texture_pentagon(cx);
                     })
                     .width(Stretch(1.2))
@@ -292,6 +293,153 @@ pub(crate) fn create(
 
         ResizeHandle::new(cx);
     })
+}
+
+fn build_pitch_core_pentagon(cx: &mut Context) {
+    ZStack::new(cx, |cx| {
+        // LAYER 1: The Label
+        Label::new(cx, "Core")
+            .top(Stretch(0.1))
+            .bottom(Stretch(0.9))
+            .left(Stretch(0.5))
+            .right(Stretch(0.5))
+            .width(Stretch(0.5))
+            .child_space(Stretch(1.0))
+            .class("pentagon-label");
+
+        // LAYER 2: The Grid (4 Corners)
+        VStack::new(cx, |cx| {
+            // TOP ROW: Tex Type (Top-Left) and Variation (Top-Right)
+            HStack::new(cx, |cx| {
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.waveform,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
+
+                // This spring sits between the knobs, pushing them to the far left and right edges
+                Element::new(cx).width(Stretch(1.0));
+
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.analog_variation,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
+            });
+
+            // MIDDLE ROW: An empty vertical spring to push the top and bottom rows apart
+            Element::new(cx).height(Stretch(1.0));
+
+            // BOTTOM ROW: Tex Tone (Bottom-Left) and Tex Decay (Bottom-Right)
+            HStack::new(cx, |cx| {
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.sweep,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
+
+                // Another spring in the middle pushing these to the bottom corners
+                Element::new(cx).width(Stretch(1.0));
+
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.pitch_decay,
+                    false,
+                    85.0,
+                    "vintage-knob",
+                );
+            });
+        })
+            .height(Stretch(1.0))
+            .class("orange");
+
+        // LAYER 3: The Giant Center Knob (Foreground)
+        // By making it a direct child of the ZStack, it overlaps the VStack without expanding its rows
+        SingleKnob::new(
+            cx,
+            Data::params,
+            |p| &p.tune,
+            false,
+            130.0,
+            "vintage-knob",
+        )
+            .class("large-center-knob")
+            // Apply equal springs to all sides to perfectly center it within the ZStack
+            .top(Stretch(1.0))
+            .bottom(Stretch(1.0))
+            .left(Stretch(1.0))
+            .right(Stretch(1.0));
+    })
+        .top(Stretch(0.04))
+        .bottom(Stretch(0.04))
+        .left(Stretch(0.04))
+        .right(Stretch(0.04));
+
+    //
+    // ZStack::new(cx, |cx| {
+    //     // LAYER 1: The Label
+    //     Label::new(cx, "Core")
+    //         .top(Stretch(1.0))
+    //         .bottom(Stretch(1.0))
+    //         .left(Stretch(1.0))
+    //         .right(Stretch(1.0))
+    //         .width(Stretch(0.5))
+    //         .child_space(Stretch(1.0))
+    //         .class("pentagon-label");
+    //
+    //     // Inside your UI build function or a helper:
+    //     VStack::new(cx, |cx| {
+    //         // TOP ROW: Tune (Centered)
+    //         HStack::new(cx, |cx| {
+    //             Element::new(cx).width(Stretch(1.0));
+    //             SingleKnob::new(cx, Data::params, |p| &p.tune, false, 85.0, "vintage-knob");
+    //             Element::new(cx).width(Stretch(1.0));
+    //         });
+    //
+    //         // MIDDLE ROW: Drift & Decay (Pushed to edges)
+    //         HStack::new(cx, |cx| {
+    //             SingleKnob::new(
+    //                 cx,
+    //                 Data::params,
+    //                 |p| &p.analog_variation,
+    //                 false,
+    //                 85.0,
+    //                 "vintage-knob",
+    //             );
+    //             Element::new(cx).width(Stretch(1.0));
+    //             SingleKnob::new(
+    //                 cx,
+    //                 Data::params,
+    //                 |p| &p.pitch_decay,
+    //                 false,
+    //                 85.0,
+    //                 "vintage-knob",
+    //             );
+    //         });
+    //
+    //         // BOTTOM ROW: Sweep (Centered)
+    //         HStack::new(cx, |cx| {
+    //             Element::new(cx).width(Stretch(1.0));
+    //             SingleKnob::new(cx, Data::params, |p| &p.sweep, false, 85.0, "vintage-knob");
+    //             Element::new(cx).width(Stretch(1.0));
+    //         });
+    //     })
+    //         .class("red");
+    // })
+    //     .top(Stretch(0.08))
+    //     .bottom(Stretch(0.08))
+    //     .left(Stretch(0.08))
+    //     .right(Stretch(0.08));
 }
 
 fn build_pitch_core_diamond(cx: &mut Context) {
@@ -426,7 +574,7 @@ fn build_texture_pentagon(cx: &mut Context) {
             Data::params,
             |p| &p.tex_amt,
             false,
-            180.0,
+            130.0,
             "vintage-knob",
         )
         .class("large-center-knob")
@@ -720,7 +868,7 @@ fn build_corrosion_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.corrosion_amount,
                     false,
-                    120.0,
+                    130.0,
                     "vintage-knob",
                 )
                 .class("large-center-knob");

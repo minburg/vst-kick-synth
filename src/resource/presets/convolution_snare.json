@@ -1,6 +1,7 @@
 {
   "name": "Convolution Snare",
   "tune": 69.70392,
+  "waveform": 1,
   "sweep": 373.80048,
   "pitch_decay": 102.713036,
   "drive": 0.0,

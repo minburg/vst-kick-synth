@@ -1,6 +1,7 @@
 {
     "name": "Glitchy Zap",
     "tune": 80.0,
+    "waveform": 1,
     "sweep": 1000.0,
     "pitch_decay": 20.0,
     "drive": 0.33,

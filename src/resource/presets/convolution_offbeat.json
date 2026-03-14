@@ -1,6 +1,7 @@
 {
   "name": "Convolution Offbeat",
   "tune": 44.0,
+  "waveform": 1,
   "sweep": 172.20073,
   "pitch_decay": 100.0,
   "drive": 0.7224001,

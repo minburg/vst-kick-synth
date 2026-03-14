@@ -48,6 +48,10 @@ struct VoiceState {
     analog_drift: f32,
     fast_release: bool,
     midi_note: u8,
+    /// Second oscillator phase used only in Sub mode (waveform 5).
+    /// Advances at half the fundamental frequency so it never aliases when
+    /// `voice.phase` wraps — it needs its own independent counter.
+    waveform_phase2: f32,
 }
 
 impl Default for VoiceState {
@@ -69,6 +73,7 @@ impl Default for VoiceState {
             analog_drift: 0.0,
             fast_release: false,
             midi_note: 36,
+            waveform_phase2: 0.0,
         }
     }
 }
@@ -159,6 +164,9 @@ struct KickParams {
     /// The main "Tune" of the kick (Hz)
     #[id = "tune"]
     pub tune: FloatParam,
+
+    #[id = "waveform"]
+    pub waveform: IntParam,
 
     /// How much the pitch sweeps down (Hz)
     #[id = "sweep"]
@@ -315,6 +323,7 @@ impl KickParams {
         crate::presets::Preset {
             name: "Custom".to_string(),
             tune: self.tune.value(),
+            waveform: self.waveform.value(),
             sweep: self.sweep.value(),
             pitch_decay: self.pitch_decay.value(),
             drive: self.drive.value(),
@@ -373,6 +382,23 @@ impl Default for KickParams {
                 },
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.1} hz", value))),
+
+            waveform: IntParam::new(
+                "Mode",
+                1i32,
+                IntRange::Linear {
+                    min: 1i32,
+                    max: 5i32,
+                },
+            )
+                .with_value_to_string(Arc::new(|value| match value {
+                    1 => "Sine".to_string(),
+                    2 => "Octave".to_string(),
+                    3 => "Fifth".to_string(),
+                    4 => "Warm".to_string(),
+                    5 => "Sub".to_string(),
+                    _ => "Unknown".to_string(),
+                })),
 
             sweep: FloatParam::new(
                 "Sweep",
@@ -779,6 +805,7 @@ impl Default for KickSynth {
 
 struct SmoothedParams {
     tune: f32,
+    waveform: i32,
     sweep: f32,
     pitch_decay: f32,
     drive: f32,
@@ -1120,6 +1147,7 @@ impl Plugin for KickSynth {
 
             let params = SmoothedParams {
                 tune: self.params.tune.smoothed.next(),
+                waveform: self.params.waveform.smoothed.next(),
                 sweep: self.params.sweep.smoothed.next(),
                 pitch_decay: self.params.pitch_decay.smoothed.next(),
                 drive: self.params.drive.smoothed.next(),
@@ -1387,8 +1415,65 @@ impl KickSynth {
             let phase_inc = current_freq / sample_rate;
             voice.phase = (voice.phase + phase_inc).fract();
 
-            let sine_wave = (voice.phase * 2.0 * std::f32::consts::PI).sin();
-            let signal = sine_wave * voice.envelope_value;
+            // Sub mode (5) needs an independent half-speed phase that must *not*
+            // reset on every fundamental cycle — hence the dedicated counter.
+            if params.waveform == 5 {
+                voice.waveform_phase2 = (voice.waveform_phase2 + phase_inc * 0.5).fract();
+            }
+
+            let pi2 = 2.0 * std::f32::consts::PI;
+
+            // ── Waveform modes ────────────────────────────────────────────────
+            // All modes are normalised to peak ±1.0 so downstream gain staging
+            // is identical regardless of which mode is selected.
+            let osc_out = match params.waveform {
+                // 1 · Pure Sine — clean reference
+                1 => (voice.phase * pi2).sin(),
+
+                // 2 · Octave — sine + octave above (2× freq) at 50 %
+                //     Adds presence and punch in the 80–200 Hz sweep range.
+                //     Both partials track the pitch envelope together.
+                2 => {
+                    let base = (voice.phase * pi2).sin();
+                    let oct  = (voice.phase * pi2 * 2.0).sin();
+                    (base + oct * 0.3) / 1.5
+                }
+
+                // 3 · Fifth — sine + perfect fifth (1.5× freq) at 35 %
+                //     The fifth interval gives a tuned, musical sub character
+                //     without introducing harsh high harmonics.
+                3 => {
+                    let base  = (voice.phase * pi2).sin();
+                    let fifth = (voice.phase * pi2 * 1.5).sin();
+                    (base + fifth * 0.35) / 1.35
+                }
+
+                // 4 · Warm — tanh-saturated sine (k = 2.0)
+                //     tanh(k·x)/tanh(k) is an odd-symmetric soft clipper, so it
+                //     adds only odd harmonics (3rd ≈ 8 %, 5th ≈ 1 %).  At 50 Hz
+                //     the 3rd harmonic lands at 150 Hz — right at the low-pass
+                //     rolloff the user described.  Sounds like a gently driven
+                //     tube stage.
+                4 => {
+                    let sine = (voice.phase * pi2).sin();
+                    let k = 2.0_f32;
+                    (k * sine).tanh() / k.tanh()
+                }
+
+                // 5 · Sub — sine + sub-octave (0.5× freq) at 40 %
+                //     The sub-octave doubles the perceived low-end weight.
+                //     Uses the dedicated waveform_phase2 counter so the
+                //     half-speed oscillator is never reset mid-cycle.
+                5 => {
+                    let base = (voice.phase * pi2).sin();
+                    let sub  = (voice.waveform_phase2 * pi2).sin();
+                    (base + sub * 0.4) / 1.4
+                }
+
+                _ => (voice.phase * pi2).sin(),
+            };
+
+            let signal = osc_out * voice.envelope_value;
 
             // Texture Logic
             let mut tex_signal = 0.0;

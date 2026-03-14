@@ -1,6 +1,7 @@
 {
     "name": "Dubstep Weight",
     "tune": 38.0,
+    "waveform": 1,
     "sweep": 200.0,
     "pitch_decay": 120.0,
     "drive": 0.4,

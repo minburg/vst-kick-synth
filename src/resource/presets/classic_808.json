@@ -1,6 +1,7 @@
 {
     "name": "Classic 808",
     "tune": 50.0,
+    "waveform": 1,
     "sweep": 150.0,
     "pitch_decay": 60.0,
     "drive": 0.33,
