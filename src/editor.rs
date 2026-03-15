@@ -49,11 +49,6 @@ const SPOTIFY_ICON_BYTES: &[u8] =
 
 // ── Public API ──────────────────────────────────────────────────────────────────
 
-/// Return the default ViziaState (window size).
-pub(crate) fn default_state() -> Arc<ViziaState> {
-    ViziaState::new(|| (1400, 1100))
-}
-
 /// Build and return the editor instance.
 pub(crate) fn create(
     params: Arc<KickParams>,
