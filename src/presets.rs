@@ -1,5 +1,5 @@
-use serde::{Serialize, Deserialize};
-use crate::{NamModel, FilterType, FilterPosition};
+use serde::{Deserialize, Serialize};
+use crate::{FilterPosition, FilterType, NamModel};
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Preset {
