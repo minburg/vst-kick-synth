@@ -258,7 +258,7 @@ impl KickParams {
 impl Default for KickParams {
     fn default() -> Self {
         Self {
-            editor_state: ViziaState::new_with_default_scale_factor(|| (1400, 1100), 0.6),
+            editor_state: ViziaState::new_with_default_scale_factor(|| (1400, 1100), 1.0),
 
             gui_trigger: std::sync::atomic::AtomicU32::new(0),
             gui_release: std::sync::atomic::AtomicU32::new(0),

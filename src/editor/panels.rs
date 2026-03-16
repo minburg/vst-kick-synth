@@ -20,7 +20,7 @@ use crate::editor::data::{Data, PresetEvent};
 use crate::editor::my_peak_meter::MyPeakMeter;
 use crate::editor::single_knob::SingleKnob;
 use crate::editor::vertical_param_slider::VerticalParamSlider;
-use crate::editor::widgets::{create_text_button, create_toggle_button};
+use crate::editor::widgets::{create_toggle_button, create_trigger_button};
 use crate::params::KickParams;
 
 /// Gain (linear amplitude) → dB conversion used by the VU meters.
@@ -55,7 +55,7 @@ pub fn build_pitch_core_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.waveform,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
 
@@ -66,7 +66,7 @@ pub fn build_pitch_core_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.analog_variation,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
             });
@@ -75,14 +75,7 @@ pub fn build_pitch_core_pentagon(cx: &mut Context) {
 
             // BOTTOM ROW: Sweep (Bottom-Left) and Pitch Decay (Bottom-Right)
             HStack::new(cx, |cx| {
-                SingleKnob::new(
-                    cx,
-                    Data::params,
-                    |p| &p.sweep,
-                    false,
-                    85.0,
-                    "vintage-knob",
-                );
+                SingleKnob::new(cx, Data::params, |p| &p.sweep, false, 80.0, "vintage-knob");
 
                 Element::new(cx).width(Stretch(1.0));
 
@@ -91,7 +84,7 @@ pub fn build_pitch_core_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.pitch_decay,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
             });
@@ -100,20 +93,14 @@ pub fn build_pitch_core_pentagon(cx: &mut Context) {
         .class("orange");
 
         // LAYER 3: Centre Tune knob (overlaid)
-        SingleKnob::new(
-            cx,
-            Data::params,
-            |p| &p.tune,
-            false,
-            130.0,
-            "vintage-knob",
-        )
-        .class("large-center-knob")
-        .top(Stretch(1.0))
-        .bottom(Stretch(1.0))
-        .left(Stretch(1.0))
-        .right(Stretch(1.0));
+        SingleKnob::new(cx, Data::params, |p| &p.tune, false, 130.0, "vintage-knob")
+            .class("large-center-knob")
+            .top(Stretch(1.0))
+            .bottom(Stretch(1.0))
+            .left(Stretch(1.0))
+            .right(Stretch(1.0));
     })
+    .class("core-item")
     .top(Stretch(0.04))
     .bottom(Stretch(0.04))
     .left(Stretch(0.04))
@@ -137,7 +124,7 @@ pub fn build_pitch_core_diamond(cx: &mut Context) {
         VStack::new(cx, |cx| {
             HStack::new(cx, |cx| {
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.tune, false, 85.0, "vintage-knob");
+                SingleKnob::new(cx, Data::params, |p| &p.tune, false, 80.0, "vintage-knob");
                 Element::new(cx).width(Stretch(1.0));
             });
 
@@ -147,7 +134,7 @@ pub fn build_pitch_core_diamond(cx: &mut Context) {
                     Data::params,
                     |p| &p.analog_variation,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
                 Element::new(cx).width(Stretch(1.0));
@@ -156,14 +143,14 @@ pub fn build_pitch_core_diamond(cx: &mut Context) {
                     Data::params,
                     |p| &p.pitch_decay,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
             });
 
             HStack::new(cx, |cx| {
                 Element::new(cx).width(Stretch(1.0));
-                SingleKnob::new(cx, Data::params, |p| &p.sweep, false, 85.0, "vintage-knob");
+                SingleKnob::new(cx, Data::params, |p| &p.sweep, false, 80.0, "vintage-knob");
                 Element::new(cx).width(Stretch(1.0));
             });
         })
@@ -196,7 +183,7 @@ pub fn build_texture_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.tex_type,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
 
@@ -207,7 +194,7 @@ pub fn build_texture_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.tex_variation,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
             });
@@ -220,7 +207,7 @@ pub fn build_texture_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.tex_tone,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
 
@@ -231,7 +218,7 @@ pub fn build_texture_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.tex_decay,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
             });
@@ -253,6 +240,7 @@ pub fn build_texture_pentagon(cx: &mut Context) {
         .left(Stretch(1.0))
         .right(Stretch(1.0));
     })
+    .class("core-item")
     .top(Stretch(0.04))
     .bottom(Stretch(0.04))
     .left(Stretch(0.04))
@@ -443,7 +431,7 @@ pub fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
                 .height(Pixels(40.0));
 
                 // Trigger Button
-                create_text_button(
+                create_trigger_button(
                     cx,
                     "TRIGGER",
                     Data::params.map(|p| p.trigger.value()),
@@ -462,7 +450,10 @@ pub fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
             })
             .height(Stretch(1.0));
         });
-    });
+    })
+        .class("core-item")
+
+    ;
 }
 
 // ── Mangle zone ─────────────────────────────────────────────────────────────────
@@ -485,15 +476,17 @@ pub fn build_drive_pill(cx: &mut Context) {
                 Data::params,
                 |p| &p.drive_model,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob",
             );
 
-            SingleKnob::new(cx, Data::params, |p| &p.drive, false, 85.0, "vintage-knob");
+            SingleKnob::new(cx, Data::params, |p| &p.drive, false, 80.0, "vintage-knob");
         })
         .class("orange")
         .height(Stretch(0.5));
     })
+    .class("core-item")
+    .height(Stretch(0.5))
     .top(Stretch(0.02))
     .bottom(Stretch(0.02))
     .left(Stretch(0.02))
@@ -521,9 +514,11 @@ pub fn build_corrosion_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.corrosion_frequency,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
-                );
+                )
+                .width(Stretch(1.0))
+                .height(Stretch(1.0));
 
                 Element::new(cx).width(Stretch(1.0));
 
@@ -532,9 +527,11 @@ pub fn build_corrosion_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.corrosion_width,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
-                );
+                )
+                .width(Stretch(1.0))
+                .height(Stretch(1.0));
             });
 
             HStack::new(cx, |cx| {
@@ -548,7 +545,9 @@ pub fn build_corrosion_pentagon(cx: &mut Context) {
                     130.0,
                     "vintage-knob",
                 )
-                .class("large-center-knob");
+                .class("large-center-knob")
+                .width(Stretch(1.0))
+                .height(Stretch(1.0));
 
                 Element::new(cx).width(Stretch(1.0));
             });
@@ -559,9 +558,11 @@ pub fn build_corrosion_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.corrosion_noise_blend,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
-                );
+                )
+                .width(Stretch(1.0))
+                .height(Stretch(1.0));
 
                 Element::new(cx).width(Stretch(1.0));
 
@@ -570,14 +571,18 @@ pub fn build_corrosion_pentagon(cx: &mut Context) {
                     Data::params,
                     |p| &p.corrosion_stereo,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
-                );
+                )
+                .width(Stretch(1.0))
+                .height(Stretch(1.0));
             });
         })
         .height(Stretch(1.0))
         .class("orange");
     })
+    .class("core-item")
+    .height(Stretch(1.5))
     .top(Stretch(0.02))
     .bottom(Stretch(0.02))
     .left(Stretch(0.02))
@@ -623,7 +628,7 @@ pub fn build_nam_triangle(cx: &mut Context) {
                     Data::params,
                     |p| &p.nam_model,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
                 Element::new(cx).width(Stretch(1.0));
@@ -635,7 +640,7 @@ pub fn build_nam_triangle(cx: &mut Context) {
                     Data::params,
                     |p| &p.nam_input_gain,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
                 Element::new(cx).width(Stretch(1.0));
@@ -644,7 +649,7 @@ pub fn build_nam_triangle(cx: &mut Context) {
                     Data::params,
                     |p| &p.output_gain,
                     false,
-                    85.0,
+                    80.0,
                     "vintage-knob",
                 );
             });
@@ -652,6 +657,8 @@ pub fn build_nam_triangle(cx: &mut Context) {
         .class("orange")
         .height(Stretch(1.0));
     })
+    .class("core-item")
+    .height(Stretch(1.0))
     .top(Stretch(0.02))
     .bottom(Stretch(0.02))
     .left(Stretch(0.02))
@@ -696,7 +703,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_type,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -706,7 +713,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_position,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -721,7 +728,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_cutoff,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -731,7 +738,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_resonance,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -741,7 +748,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_env_trigger,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -751,7 +758,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_key_track,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -766,7 +773,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_env_amount,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -776,7 +783,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_env_attack,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -786,7 +793,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_env_decay,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -796,7 +803,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_env_sustain,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -806,7 +813,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 Data::params,
                 |p| &p.filter_env_release,
                 false,
-                85.0,
+                80.0,
                 "vintage-knob-poti1",
             )
             .width(Stretch(1.0));
@@ -829,8 +836,7 @@ pub fn build_preset_header(cx: &mut Context) {
 
         PickList::new(
             cx,
-            Data::factory_presets
-                .map(|p| p.iter().map(|pr| pr.name.clone()).collect::<Vec<_>>()),
+            Data::factory_presets.map(|p| p.iter().map(|pr| pr.name.clone()).collect::<Vec<_>>()),
             Data::selected_preset,
             true,
         )
@@ -864,19 +870,71 @@ pub fn build_preset_header(cx: &mut Context) {
 pub fn build_main_layout(params: &Arc<KickParams>, cx: &mut Context) {
     VStack::new(cx, |cx| {
         VStack::new(cx, |cx| {
-            VStack::new(cx, |cx| {
-                Label::new(cx, "CONVOLUTION'S Kick Synth").class("header-title");
+            ZStack::new(cx, |cx| {
+                VStack::new(cx, |cx| {
+                    Label::new(cx, "CONVOLUTION'S Kick Synth").class("header-title");
+                })
+                .width(Stretch(1.0))
+                .height(Stretch(0.1))
+                .row_between(Pixels(10.0))
+                .child_space(Stretch(1.0))
+                .class("title-section");
+
+                // Top-left overlay: UI scale controls (do not interfere with title layout)
+                HStack::new(cx, |cx| {
+                    // Decrease scale by 0.2
+                    Button::new(
+                        cx,
+                        |cx| {
+                            let scale = cx.scale_factor();
+                            // clamp to a sensible minimum
+                            let new_scale = (scale - 0.2).max(0.5);
+                            cx.set_user_scale_factor(new_scale as f64);
+                        },
+                        |cx| Label::new(cx, "-"),
+                    )
+                    .left(Stretch(0.3))
+                    .right(Stretch(0.3))
+                    .top(Stretch(0.05))
+                    .bottom(Stretch(0.05))
+                    .child_space(Stretch(1.0))
+                    .class("scale-button")
+                    .width(Pixels(40.0))
+                    .height(Pixels(32.0));
+
+                    // Increase scale by 0.2
+                    Button::new(
+                        cx,
+                        |cx| {
+                            let scale = cx.scale_factor();
+                            // clamp to a sensible maximum
+                            let new_scale = (scale + 0.2).min(3.0);
+                            cx.set_user_scale_factor(new_scale as f64);
+                        },
+                        |cx| Label::new(cx, "+"),
+                    )
+                    .left(Stretch(0.3))
+                    .right(Stretch(0.3))
+                    .top(Stretch(0.05))
+                    .bottom(Stretch(0.05))
+                    .child_space(Stretch(1.0))
+                    .class("scale-button")
+                    .width(Pixels(40.0))
+                    .height(Pixels(32.0));
+                })
+                // Position the overlay in the top-left of the ZStack title area
+                .left(Pixels(8.0))
+                .top(Pixels(6.0))
+                .width(Pixels(96.0))
+                .height(Pixels(32.0))
+                .row_between(Pixels(6.0));
             })
             .width(Stretch(1.0))
             .height(Stretch(0.1))
-            .row_between(Pixels(10.0))
-            .child_space(Stretch(1.0))
-            .class("title-section");
+            .row_between(Pixels(10.0));
 
             HStack::new(cx, |cx| {
-                VStack::new(cx, |_cx| {})
-                    .width(Stretch(0.1))
-                    .class("zone-source");
+                VStack::new(cx, |_cx| {}).width(Stretch(0.03));
 
                 // ZONE 1: THE SOURCE (Generators)
                 VStack::new(cx, |cx| {
@@ -886,26 +944,33 @@ pub fn build_main_layout(params: &Arc<KickParams>, cx: &mut Context) {
                 .width(Stretch(1.2))
                 .class("zone-source");
 
+                VStack::new(cx, |_cx| {}).width(Stretch(0.03));
+
                 // ZONE 2: THE BODY (Amp Envelope)
                 VStack::new(cx, |cx| {
                     build_center_amp_env(params, cx);
                 })
                 .width(Stretch(1.0))
-                .class("zone-body");
+                .class("zone-source");
+
+                VStack::new(cx, |_cx| {}).width(Stretch(0.03));
 
                 // ZONE 3: THE MANGLE (Destruction)
                 VStack::new(cx, |cx| {
                     build_drive_pill(cx);
+                    VStack::new(cx, |_cx| {}).height(Stretch(0.05));
+
                     build_corrosion_pentagon(cx);
+                    VStack::new(cx, |_cx| {}).height(Stretch(0.05));
+
                     build_nam_triangle(cx);
                 })
                 .width(Stretch(1.2))
-                .class("zone-mangle");
+                .class("zone-source");
 
-                VStack::new(cx, |_cx| {})
-                    .width(Stretch(0.1))
-                    .class("zone-source");
+                VStack::new(cx, |_cx| {}).width(Stretch(0.03));
             })
+            .class("filter-section")
             .width(Stretch(1.0))
             .height(Stretch(0.73));
 

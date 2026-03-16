@@ -53,7 +53,7 @@ impl PickList {
                                 .child_bottom(Stretch(1.0))
                                 .checked(selected.map(move |selected| *selected == index))
                                 .navigable(true)
-                                .on_press(move |cx| {
+                                .on_press_down(move |cx| {
                                     cx.emit(PickListEvent::SetOption(index));
                                     cx.emit(PopupEvent::Close);
                                 });

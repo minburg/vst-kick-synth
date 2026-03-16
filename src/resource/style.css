@@ -122,7 +122,7 @@
 }
 
 .pentagon-label {
-    color: #c6a863;
+    color: #74355C;
     font-size: 28.0;
     font-family: "Orbitron";
     background-color: rgba(0, 0, 0, 0);
@@ -136,7 +136,7 @@
 
 .single-knob-label {
     color: #e6c372;
-    font-size: 16.0;
+    font-size: 15.0;
     font-family: "Comfortaa";
 }
 
@@ -190,10 +190,17 @@
 }
 
 .zone-source {
-    background-color: rgba(230, 117, 255, 0);
-    border-radius: 15px;
-    border-width: 3px;
-    border-color: rgba(69, 69, 69, 0);
+    background-color: rgba(0, 0, 0, 0.40);
+    border-radius: 12px;
+    border-color: rgba(198, 168, 99, 0.25);
+    border-width: 1px;
+}
+
+.core-item {
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border-color: rgba(198, 168, 99, 0.15);
+    border-width: 1px;
 }
 
 .zone-body {
@@ -355,6 +362,21 @@
     /*font-weight: bold;*/
     font-family: "Orbitron";
 }
+
+
+.scale-button {
+    border-width: 1px;
+    border-color: #000000;
+
+    background-color: #614963;
+    color: #c6a863;
+
+    border-radius: 5px;
+    font-size: 20.0;
+    /*font-weight: bold;*/
+    font-family: "Orbitron";
+}
+
 
 .switch-button {
     border-width: 1px;

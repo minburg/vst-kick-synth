@@ -152,7 +152,7 @@ where
 ///
 /// Increments `gui_trigger` / `gui_release` atomics so the audio thread can
 /// detect the event even at high buffer sizes.
-pub fn create_text_button<'a, L, F>(
+pub fn create_trigger_button<'a, L, F>(
     cx: &'a mut Context,
     label_text: &'static str,
     lens: L,
