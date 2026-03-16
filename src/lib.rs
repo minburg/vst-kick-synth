@@ -32,6 +32,7 @@ mod corrosion;
 mod drive;
 mod editor;
 mod filter;
+mod filter_v2;
 mod params;
 mod presets;
 mod voice;
@@ -41,6 +42,7 @@ mod nam;
 // ── Re-exports (public surface used by editor / presets) ────────────────────────
 
 pub use filter::{FilterPosition, FilterType};
+pub use filter_v2::FilterStyle;
 pub use params::{KickParams, NamModel};
 
 use corrosion::CorrosionState;
