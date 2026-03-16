@@ -130,7 +130,7 @@
 
 .adsr-label {
     color: #c6a863;
-    font-size: 22.0;
+    font-size: 18.0;
     font-family: "Comfortaa";
 }
 
@@ -489,7 +489,7 @@
 
 /* Preset UI */
 .preset-header {
-    background-color: rgba(0, 0, 0, 0);
+    background-color: rgba(179, 84, 84, 0);
     border-radius: 10px;
     padding: 10px;
 }
@@ -507,7 +507,7 @@
     font-size: 16.0;
     /*border-radius: 4px;*/
     /*border-color: #c6a863;*/
-    border-width: 1px;
+    border-width: 0px;
 }
 
 .preset-dropdown:hover {
@@ -567,6 +567,12 @@ picklist .icon {
    picklist's own background is visible. */
 picklist dropdown {
     background-color: transparent;
+    border-width: 0px;
+}
+
+.dropdown-convolution {
+    background-color: transparent;
+    border-width: 0px;
 }
 
 picklist popup {

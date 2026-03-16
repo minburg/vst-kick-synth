@@ -274,7 +274,7 @@ pub fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
                             nih_log!("Failed to open browser: {}", e);
                         }
                     })
-                    .height(Stretch(1.0))
+                    .height(Stretch(0.5))
                     .left(Stretch(1.0))
                     .right(Stretch(1.0))
                     .child_space(Stretch(1.0));
@@ -296,15 +296,15 @@ pub fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
                             );
                         });
                 })
-                .height(Stretch(1.0))
+                .height(Stretch(0.5))
                 .width(Stretch(1.0))
                 .child_space(Stretch(1.0))
                 .child_top(Stretch(0.01))
                 .child_bottom(Stretch(0.01))
                 .class("link-section");
             })
-            .row_between(Pixels(15.0))
-            .height(Stretch(0.6));
+            .row_between(Pixels(20.0))
+            .height(Stretch(1.0));
 
             HStack::new(cx, |cx| {
                 VStack::new(cx, |cx| {
@@ -444,11 +444,13 @@ pub fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
                 .right(Stretch(0.1))
                 .top(Stretch(0.05))
                 .bottom(Stretch(0.05))
-                .width(Stretch(1.0))
-                .height(Pixels(60.0))
+                .width(Stretch(0.4))
+                .height(Pixels(50.0))
                 .child_space(Stretch(1.0));
             })
-            .height(Stretch(1.0));
+                .height(Stretch(1.0))
+                .row_between(Pixels(0.0));
+
         });
     })
         .class("core-item")
@@ -693,7 +695,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
             .child_space(Stretch(1.0));
         })
         .child_space(Stretch(1.0))
-        .width(Stretch(0.22))
+        .width(Stretch(0.08))
         .class("filter-ctrl-group");
 
         // ── Type + Position enum knobs ────────────────────────────────────
@@ -711,6 +713,16 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
             SingleKnob::new(
                 cx,
                 Data::params,
+                |p| &p.filter_style,
+                false,
+                80.0,
+                "vintage-knob-poti1",
+            )
+            .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
                 |p| &p.filter_position,
                 false,
                 80.0,
@@ -718,7 +730,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
             )
             .width(Stretch(1.0));
         })
-        .width(Stretch(0.5))
+        .width(Stretch(0.23))
         .class("filter-ctrl-group");
 
         // ── Core params: Cutoff, Resonance, Trigger Mode, Key Track ──────────────
@@ -763,19 +775,34 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
             )
             .width(Stretch(1.0));
         })
-        .width(Stretch(1.0))
+        .width(Stretch(0.31))
         .class("filter-ctrl-group");
 
         // ── Filter Envelope: Amount, A, D, S, R ──────────────────────────
         HStack::new(cx, |cx| {
-            SingleKnob::new(
-                cx,
-                Data::params,
-                |p| &p.filter_env_amount,
-                false,
-                80.0,
-                "vintage-knob-poti1",
-            )
+            VStack::new(cx, |cx| {
+                SingleKnob::new(
+                    cx,
+                    Data::params,
+                    |p| &p.filter_env_amount,
+                    false,
+                    80.0,
+                    "vintage-knob-poti1",
+                )
+                .width(Stretch(1.0));
+
+                // Label::new(
+                //     cx,
+                //     Data::params.map(|params| {
+                //         let peak = (params.filter_cutoff.value()
+                //             * 2.0f32.powf(params.filter_env_amount.value()))
+                //         .clamp(20.0, 20_000.0);
+                //         format!("Peak Hz: {:.0}", peak)
+                //     }),
+                // )
+                // .class("peak-label")
+                // .height(Pixels(18.0));
+            })
             .width(Stretch(1.0));
             Element::new(cx).width(Stretch(0.2));
             SingleKnob::new(
@@ -818,7 +845,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
             )
             .width(Stretch(1.0));
         })
-        .width(Stretch(1.2))
+        .width(Stretch(0.38))
         .class("filter-ctrl-group");
     })
     .col_between(Pixels(10.0))
@@ -831,37 +858,70 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
 
 /// Preset picker row with Save / Load file buttons.
 pub fn build_preset_header(cx: &mut Context) {
-    HStack::new(cx, |cx| {
-        Label::new(cx, "Preset:").class("preset-label");
+    VStack::new(cx, |cx| {
+        HStack::new(cx, |cx| {
+            Label::new(cx, "Bank:")
+                .class("preset-label")
+                .width(Stretch(0.6));
+            PickList::new(cx, Data::bank_names, Data::selected_bank, true)
+                .on_select(|cx, index| cx.emit(PresetEvent::SelectBank(index)))
+                .width(Stretch(1.0))
+                .class("preset-dropdown");
 
-        PickList::new(
-            cx,
-            Data::factory_presets.map(|p| p.iter().map(|pr| pr.name.clone()).collect::<Vec<_>>()),
-            Data::selected_preset,
-            true,
-        )
-        .on_select(|cx, index| cx.emit(PresetEvent::LoadFactory(index)))
-        .width(Pixels(200.0))
-        .class("preset-dropdown");
+            Label::new(cx, "Category:")
+                .class("preset-label")
+                .width(Stretch(1.0));
+            PickList::new(cx, Data::category_names, Data::selected_category, true)
+                .on_select(|cx, index| cx.emit(PresetEvent::SelectCategory(index)))
+                .width(Stretch(1.0))
+                .class("preset-dropdown");
+        })
+        .height(Stretch(1.0))
+        .child_top(Stretch(1.0))
+        .child_bottom(Stretch(1.0))
+        .col_between(Pixels(12.0));
 
-        Button::new(
-            cx,
-            |cx| cx.emit(PresetEvent::SaveToFile),
-            |cx| Label::new(cx, "Save"),
-        )
-        .class("preset-button");
+        HStack::new(cx, |cx| {
+            PickList::new(cx, Data::preset_names, Data::selected_preset, true)
+                .on_select(|cx, index| cx.emit(PresetEvent::SelectPreset(index)))
+                .width(Stretch(1.0))
+                .class("preset-dropdown");
+        })
+        .child_top(Stretch(1.0))
+        .child_bottom(Stretch(1.0))
+        .height(Stretch(1.0))
+        .width(Stretch(1.0));
 
-        Button::new(
-            cx,
-            |cx| cx.emit(PresetEvent::LoadFromFile),
-            |cx| Label::new(cx, "Load"),
-        )
-        .class("preset-button");
+        HStack::new(cx, |cx| {
+            Button::new(
+                cx,
+                |cx| cx.emit(PresetEvent::LoadSelection),
+                |cx| Label::new(cx, "Load"),
+            )
+            .class("preset-button");
+
+            Button::new(
+                cx,
+                |cx| cx.emit(PresetEvent::SaveToFile),
+                |cx| Label::new(cx, "Save"),
+            )
+            .class("preset-button");
+
+            Button::new(
+                cx,
+                |cx| cx.emit(PresetEvent::LoadFromFile),
+                |cx| Label::new(cx, "Load File"),
+            )
+            .class("preset-button");
+        })
+        .col_between(Pixels(10.0))
+        .height(Stretch(1.0))
+        .child_space(Stretch(1.0));
     })
-    .child_space(Stretch(1.0))
-    .col_between(Pixels(10.0))
-    .height(Pixels(40.0))
-    .class("preset-header");
+    .class("preset-header")
+    .height(Stretch(3.0))
+    .row_between(Pixels(0.0))
+    .width(Stretch(1.0));
 }
 
 // ── Top-level layout ─────────────────────────────────────────────────────────────

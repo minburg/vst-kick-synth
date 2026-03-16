@@ -1,16 +1,16 @@
 {
-    "name": "Glitchy Zap",
-    "tune": 80.0,
+    "name": "Vintage Tape",
+    "tune": 44.0,
     "waveform": 1,
-    "sweep": 1000.0,
-    "pitch_decay": 20.0,
-    "drive": 0.33,
+    "sweep": 239.0,
+    "pitch_decay": 100.0,
+    "drive": 0.5,
     "drive_model": 1,
-    "tex_amt": 0.8,
-    "tex_decay": 30.0,
+    "tex_amt": 0.2,
+    "tex_decay": 80.0,
     "tex_variation": 0.0,
     "analog_variation": 0.0,
-    "tex_type": 6,
+    "tex_type": 1,
     "tex_tone": 0.5,
     "attack": 0.1,
     "decay": 153.0,
@@ -22,10 +22,10 @@
     "corrosion_stereo": 0.0,
     "corrosion_amount": 0.0,
     "bass_synth_mode": false,
-    "nam_active": false,
-    "nam_input_gain": 0.0,
+    "nam_active": true,
+    "nam_input_gain": 3.0,
     "output_gain": 0.0,
-    "nam_model": "PhilipsEL3541D",
+    "nam_model": "JH24",
     "filter_active": false,
     "filter_type": "LP24",
     "filter_position": "PostNam",
@@ -38,5 +38,8 @@
     "filter_env_release": 200.0,
     "filter_env_trigger": true,
     "filter_drive": 0.0,
-    "filter_key_track": 0.0
+    "filter_key_track": 0.0,
+    "categories": [
+        "Kick"
+    ]
 }

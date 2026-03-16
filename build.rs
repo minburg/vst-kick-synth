@@ -1,5 +1,5 @@
 use std::env;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn main() {
     #[cfg(feature = "nam")]
@@ -65,16 +65,27 @@ fn main() {
     let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
     let mut generated_code = String::from("pub static PRESET_JSONS: &[&str] = &[\n");
 
-    if let Ok(entries) = std::fs::read_dir(&presets_dir) {
-        let mut entries: Vec<_> = entries.flatten().collect();
-        entries.sort_by_key(|e| e.path());
-        for entry in entries {
-            let path = entry.path();
-            if path.extension().and_then(|s| s.to_str()) == Some("json") {
-                let absolute_path = std::fs::canonicalize(&path).unwrap();
-                let path_str = absolute_path.to_str().unwrap().replace("\\", "/");
-                generated_code.push_str(&format!("    include_str!(\"{}\"),\n", path_str));
+    fn collect_json_files(dir: &Path, files: &mut Vec<PathBuf>) {
+        if let Ok(entries) = std::fs::read_dir(dir) {
+            let mut entries: Vec<_> = entries.flatten().collect();
+            entries.sort_by_key(|e| e.path());
+            for entry in entries {
+                let path = entry.path();
+                if path.is_dir() {
+                    collect_json_files(&path, files);
+                } else if path.extension().and_then(|s| s.to_str()).map(|s| s.eq_ignore_ascii_case("json")).unwrap_or(false) {
+                    files.push(path);
+                }
             }
+        }
+    }
+
+    let mut preset_paths = Vec::new();
+    collect_json_files(&presets_dir, &mut preset_paths);
+    for path in preset_paths {
+        if let Ok(absolute_path) = std::fs::canonicalize(&path) {
+            let path_str = absolute_path.to_str().unwrap().replace("\\", "/");
+            generated_code.push_str(&format!("    include_str!(\"{}\"),\n", path_str));
         }
     }
     generated_code.push_str("];\n");

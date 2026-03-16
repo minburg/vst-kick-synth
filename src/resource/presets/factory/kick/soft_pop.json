@@ -1,11 +1,11 @@
 {
-    "name": "Deep House Thump",
-    "tune": 42.0,
+    "name": "Soft Pop",
+    "tune": 55.0,
     "waveform": 1,
-    "sweep": 300.0,
-    "pitch_decay": 80.0,
-    "drive": 0.2,
-    "drive_model": 2,
+    "sweep": 100.0,
+    "pitch_decay": 100.0,
+    "drive": 0.1,
+    "drive_model": 1,
     "tex_amt": 0.2,
     "tex_decay": 80.0,
     "tex_variation": 0.0,
@@ -13,9 +13,9 @@
     "tex_type": 1,
     "tex_tone": 0.5,
     "attack": 0.1,
-    "decay": 250.0,
-    "sustain": 0.2,
-    "release": 128.0,
+    "decay": 150.0,
+    "sustain": 0.44,
+    "release": 50.0,
     "corrosion_frequency": 0.5,
     "corrosion_width": 0.5,
     "corrosion_noise_blend": 1.0,
@@ -38,5 +38,8 @@
     "filter_env_release": 200.0,
     "filter_env_trigger": true,
     "filter_drive": 0.0,
-    "filter_key_track": 0.0
+    "filter_key_track": 0.0,
+    "categories": [
+        "Kick"
+    ]
 }

@@ -1,20 +1,20 @@
 {
-    "name": "Dubstep Weight",
-    "tune": 38.0,
+    "name": "Deep House Thump",
+    "tune": 42.0,
     "waveform": 1,
-    "sweep": 200.0,
-    "pitch_decay": 120.0,
-    "drive": 0.4,
-    "drive_model": 4,
-    "tex_amt": 0.3,
+    "sweep": 300.0,
+    "pitch_decay": 80.0,
+    "drive": 0.2,
+    "drive_model": 2,
+    "tex_amt": 0.2,
     "tex_decay": 80.0,
     "tex_variation": 0.0,
     "analog_variation": 0.0,
-    "tex_type": 3,
+    "tex_type": 1,
     "tex_tone": 0.5,
     "attack": 0.1,
-    "decay": 153.0,
-    "sustain": 0.44,
+    "decay": 250.0,
+    "sustain": 0.2,
     "release": 128.0,
     "corrosion_frequency": 0.5,
     "corrosion_width": 0.5,
@@ -38,5 +38,8 @@
     "filter_env_release": 200.0,
     "filter_env_trigger": true,
     "filter_drive": 0.0,
-    "filter_key_track": 0.0
+    "filter_key_track": 0.0,
+    "categories": [
+        "Kick"
+    ]
 }

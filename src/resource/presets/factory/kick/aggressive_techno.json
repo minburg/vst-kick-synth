@@ -38,5 +38,8 @@
     "filter_env_release": 200.0,
     "filter_env_trigger": true,
     "filter_drive": 0.0,
-    "filter_key_track": 0.0
+    "filter_key_track": 0.0,
+    "categories": [
+        "Kick"
+    ]
 }

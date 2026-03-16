@@ -15,6 +15,8 @@ use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 
 use crate::filter::{FilterPosition, FilterType};
+use crate::FilterStyle;
+use crate::presets::PresetOrigin;
 
 // ── Embedded NAM model content ─────────────────────────────────────────────────
 
@@ -24,6 +26,8 @@ pub const NAM_MODEL_CULTURE_VULTURE: &str =
     include_str!("resource/nam/Culture_Vulture_HIGH_OD_Bias 3_Drive_14_PK5.nam");
 pub const NAM_MODEL_JH24: &str =
     include_str!("resource/nam/TAPE_OUT_JH24_30-450_L.nam");
+pub const NAM_MODEL_ART_PRO: &str =
+    include_str!("resource/nam/ART_PRO_VLA.nam");
 
 // ── Helpers ─────────────────────────────────────────────────────────────────────
 
@@ -42,6 +46,8 @@ pub enum NamModel {
     CultureVulture,
     #[name = "JH24"]
     JH24,
+    #[name = "ARTPRO"]
+    ARTPRO,
 }
 
 // ── KickParams ──────────────────────────────────────────────────────────────────
@@ -163,6 +169,10 @@ pub struct KickParams {
     #[id = "filter_type"]
     pub filter_type: EnumParam<FilterType>,
 
+    /// Classic / Raw / Tube / Clean
+    #[id = "filter_style"]
+    pub filter_style: EnumParam<FilterStyle>,
+
     /// Where in the signal chain the filter is inserted.
     #[id = "filter_position"]
     pub filter_position: EnumParam<FilterPosition>,
@@ -212,6 +222,7 @@ impl KickParams {
     pub fn get_current_preset(&self) -> crate::presets::Preset {
         crate::presets::Preset {
             name: "Custom".to_string(),
+            origin: PresetOrigin::User,
             tune: self.tune.value(),
             waveform: self.waveform.value(),
             sweep: self.sweep.value(),
@@ -251,6 +262,7 @@ impl KickParams {
             filter_env_trigger: self.filter_env_trigger.value(),
             filter_drive: self.filter_drive.value(),
             filter_key_track: self.filter_key_track.value(),
+            categories: Vec::new(),
         }
     }
 }
@@ -340,7 +352,7 @@ impl Default for KickParams {
                 80.0,
                 FloatRange::Linear {
                     min: 5.0,
-                    max: 650.0,
+                    max: 1000.0,
                 },
             )
             .with_value_to_string(Arc::new(move |value| format!("{:.0} ms", value))),
@@ -490,12 +502,13 @@ impl Default for KickParams {
             // ── Filter Engine ─────────────────────────────────────────────────
             filter_active: BoolParam::new("Filter", false),
 
-            filter_type: EnumParam::new("Filter Type", FilterType::LP24),
+            filter_type: EnumParam::new("Type", FilterType::LP24),
+            filter_style: EnumParam::new("Style", FilterStyle::Classic),
 
-            filter_position: EnumParam::new("Filter Position", FilterPosition::PostNam),
+            filter_position: EnumParam::new("Position", FilterPosition::PostNam),
 
             filter_cutoff: FloatParam::new(
-                "Filter Cutoff",
+                "Cutoff",
                 1500.0,
                 FloatRange::Skewed {
                     min: 20.0,
@@ -515,7 +528,7 @@ impl Default for KickParams {
             .with_smoother(SmoothingStyle::Linear(20.0)),
 
             filter_env_amount: FloatParam::new(
-                "Env Amount",
+                "Amount",
                 4.0,
                 // ±4 octaves covers every practical kick drum sweep (e.g. 300 Hz → 4.8 kHz).
                 // The previous ±10 oct range allowed the filter to be slammed against the
@@ -526,7 +539,7 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
 
             filter_env_attack: FloatParam::new(
-                "Flt Attack",
+                "Flt [A]",
                 0.1,
                 FloatRange::Skewed {
                     min: 0.1,
@@ -538,7 +551,7 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
 
             filter_env_decay: FloatParam::new(
-                "Flt Decay",
+                "Flt [D]",
                 230.0,
                 FloatRange::Skewed {
                     min: 5.0,
@@ -550,7 +563,7 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_rounded(1)),
 
             filter_env_sustain: FloatParam::new(
-                "Flt Sustain",
+                "Flt [S]",
                 0.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
             )
@@ -558,7 +571,7 @@ impl Default for KickParams {
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
 
             filter_env_release: FloatParam::new(
-                "Flt Release",
+                "Flt [R]",
                 200.0,
                 FloatRange::Skewed {
                     min: 5.0,
@@ -572,7 +585,7 @@ impl Default for KickParams {
             // Trigger mode ON by default: the filter envelope always completes
             // its A→D→R cycle on its own, independent of note length.
             // Set to false for classic gate/synth behaviour.
-            filter_env_trigger: BoolParam::new("Filter Trigger", true)
+            filter_env_trigger: BoolParam::new("Trigger", true)
                 .with_value_to_string(Arc::new(|v| {
                     if v { "Trigger".to_string() } else { "Gate".to_string() }
                 }))

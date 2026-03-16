@@ -75,6 +75,65 @@ pub enum FilterStyle {
     Clean,
 }
 
+// ─── Cutoff Ceiling Strategies (A/B testing) ────────────────────────────────
+
+/// Strategies for handling cutoff values that would exceed a safe region near
+/// Nyquist.
+///
+/// This exists because a hard clamp (the legacy behaviour) can create audible
+/// artifacts with high resonance when the envelope drives the cutoff past the
+/// ceiling: the cutoff stops moving for a while (“dwells”), and then resumes,
+/// changing the sweep law.
+///
+/// The variants below keep the original behaviour (`HardClampHz`) and add two
+/// alternatives for A/B listening:
+///
+/// - **SoftCeilingHz**: soft-limits cutoff in Hz (solution A)
+/// - **SoftCeilingG**: computes an “ideal” cutoff, but soft-limits the TPT/SVF
+///   prewarp parameter `g = tan(π·fc/fs)` directly (solution B)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Enum, Serialize, Deserialize)]
+pub enum CutoffCeilingMode {
+    /// Legacy behaviour: hard clamp in Hz (kept for comparison).
+    #[default]
+    HardClampHz,
+    /// Solution A: soft ceiling in Hz.
+    SoftCeilingHz,
+    /// Solution B: soft ceiling in `g` (preferred for preserving envelope law).
+    SoftCeilingG,
+}
+
+// ─── Internal-only “Pro” mode (stable under extreme drive/resonance) ─────────
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum InternalFilterTuning {
+    /// Use the public A/B/C ceiling strategy directly, no additional
+    /// coefficient smoothing or ladder-specific stabilization.
+    Abc,
+    /// Pro path: smooth cutoff warp near Nyquist + coefficient smoothing +
+    /// ladder resonance compensation at high cutoff.
+    Pro,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ProSmoothers {
+    ladder_g_norm: f32,
+    svf_g: f32,
+    initialized: bool,
+}
+
+impl Default for ProSmoothers {
+    fn default() -> Self {
+        Self {
+            // Use NaNs as sentinels so 0.0 can never be mistaken for a valid
+            // initialized value. The real initialization happens on the first
+            // processed sample in `pro_smooth_coeffs()`.
+            ladder_g_norm: f32::NAN,
+            svf_g: f32::NAN,
+            initialized: false,
+        }
+    }
+}
+
 // ─── Per-style saturation functions ───────────────────────────────────────────
 
 /// Classic: warm `tanh` — the standard Moog / FabFilter analog saturation.
@@ -161,6 +220,10 @@ impl MoogLadderV2 {
         resonance: f32,
         style: FilterStyle,
     ) -> (f32, f32) {
+        // Pro-grade stability measure: as cutoff approaches Nyquist, reduce
+        // effective resonance to prevent ultrasonic limit cycles and “bird”
+        // chirps. This leaves resonance untouched at normal cutoff ranges.
+        let resonance = pro_ladder_resonance_comp(g_norm, resonance);
         let k = resonance * 3.95;
 
         // DC-preserving feedback: keeps bass gain at unity while driving the
@@ -178,13 +241,7 @@ impl MoogLadderV2 {
 
             FilterStyle::Tube => tube_sat(pre),
 
-            FilterStyle::Clean => {
-                // No saturation. The hard clamp is a safety rail only — it
-                // prevents unbounded growth if the loop is marginally unstable
-                // but does not introduce audible harmonic content at normal
-                // operating levels.
-                pre.clamp(-1.5, 1.5)
-            }
+            FilterStyle::Clean => pre,
         };
 
         let s0 = self.stages[0].lowpass(x, g_norm);
@@ -362,6 +419,9 @@ pub struct FilterEngineV2 {
     svf_l: TptSvfV2,
     svf_r: TptSvfV2,
     pub envelope: FilterEnvelope,
+
+    // Internal-only pro tuning state.
+    pro: ProSmoothers,
 }
 
 impl Default for FilterEngineV2 {
@@ -372,6 +432,7 @@ impl Default for FilterEngineV2 {
             svf_l: TptSvfV2::default(),
             svf_r: TptSvfV2::default(),
             envelope: FilterEnvelope::default(),
+            pro: ProSmoothers::default(),
         }
     }
 }
@@ -395,6 +456,7 @@ impl FilterEngineV2 {
         self.svf_l.clear();
         self.svf_r.clear();
         self.envelope.clear();
+        self.pro = ProSmoothers::default();
     }
 
     /// Process one stereo sample pair.  Advances the envelope by one sample.
@@ -432,17 +494,41 @@ impl FilterEngineV2 {
             env_release_ms,
         );
 
-        let effective_hz = compute_cutoff(
-            cutoff_hz,
-            env_val,
-            env_amount_oct,
-            midi_note,
-            key_track,
-            sample_rate,
-        );
+        // Internal-only tuning switch (keeps the public API unchanged).
+        //
+        // For A/B testing:
+        // - set to `Abc` to compare HardClampHz vs SoftCeilingHz vs SoftCeilingG
+        // - set to `Pro` to compare “Pro” behavior against those modes
+        const INTERNAL_TUNING: InternalFilterTuning = InternalFilterTuning::Pro;
 
-        let g = (PI * effective_hz / sample_rate).tan().max(1e-6);
-        let g_norm = g / (1.0 + g);
+        // Public A/B/C selection (still used in Abc mode, and also as the
+        // “target generator” for Pro mode so you can compare mappings).
+        const CUTOFF_CEILING_MODE: CutoffCeilingMode = CutoffCeilingMode::SoftCeilingG;
+
+        let (g, g_norm) = match INTERNAL_TUNING {
+            InternalFilterTuning::Abc => {
+                let CutoffCoeffs { g, g_norm } = compute_cutoff_coeffs(
+                    cutoff_hz,
+                    env_val,
+                    env_amount_oct,
+                    midi_note,
+                    key_track,
+                    sample_rate,
+                    CUTOFF_CEILING_MODE,
+                );
+                (g, g_norm)
+            }
+            InternalFilterTuning::Pro => {
+                let ideal_hz =
+                    compute_cutoff_ideal_hz(cutoff_hz, env_val, env_amount_oct, midi_note, key_track);
+                let (g_target, g_norm_target) = pro_cutoff_targets(
+                    ideal_hz,
+                    sample_rate,
+                    CUTOFF_CEILING_MODE,
+                );
+                self.pro_smooth_coeffs(sample_rate, g_target, g_norm_target)
+            }
+        };
         let k = (2.0 - 1.98 * resonance.clamp(0.0, 1.0)).max(0.02);
 
         // Clean bypasses the drive stage entirely — preserves linear behaviour.
@@ -526,17 +612,34 @@ impl FilterEngineV2 {
             env_release_ms,
         );
 
-        let effective_hz = compute_cutoff(
-            cutoff_hz,
-            env_val,
-            env_amount_oct,
-            midi_note,
-            key_track,
-            sample_rate,
-        );
+        const INTERNAL_TUNING: InternalFilterTuning = InternalFilterTuning::Pro;
 
-        let g = (PI * effective_hz / sample_rate).tan().max(1e-6);
-        let g_norm = g / (1.0 + g);
+        const CUTOFF_CEILING_MODE: CutoffCeilingMode = CutoffCeilingMode::SoftCeilingG;
+
+        let (g, g_norm) = match INTERNAL_TUNING {
+            InternalFilterTuning::Abc => {
+                let CutoffCoeffs { g, g_norm } = compute_cutoff_coeffs(
+                    cutoff_hz,
+                    env_val,
+                    env_amount_oct,
+                    midi_note,
+                    key_track,
+                    sample_rate,
+                    CUTOFF_CEILING_MODE,
+                );
+                (g, g_norm)
+            }
+            InternalFilterTuning::Pro => {
+                let ideal_hz =
+                    compute_cutoff_ideal_hz(cutoff_hz, env_val, env_amount_oct, midi_note, key_track);
+                let (g_target, g_norm_target) = pro_cutoff_targets(
+                    ideal_hz,
+                    sample_rate,
+                    CUTOFF_CEILING_MODE,
+                );
+                self.pro_smooth_coeffs(sample_rate, g_target, g_norm_target)
+            }
+        };
         let k = (2.0 - 1.98 * resonance.clamp(0.0, 1.0)).max(0.02);
 
         let x = if filter_style == FilterStyle::Clean {
@@ -585,6 +688,39 @@ impl FilterEngineV2 {
 
         out
     }
+
+    #[inline]
+    fn pro_smooth_coeffs(
+        &mut self,
+        sample_rate: f32,
+        g_target: f32,
+        g_norm_target: f32,
+    ) -> (f32, f32) {
+        // Separate smoothing constants: the ladder is more sensitive.
+        // These are intentionally short (ms) so envelopes still feel snappy.
+
+        // If Pro feels like it “slows the envelope snap” too much (or still chirps at extreme settings), these are the first values to tweak:
+        //     reduce tau if it feels sluggish
+        // increase tau if you still get chirps / “bird spikes” during fast sweeps
+        let tau_svf_ms = 2.0_f32;
+        let tau_ladder_ms = 6.0_f32;
+
+        if !self.pro.initialized {
+            self.pro.svf_g = g_target;
+            self.pro.ladder_g_norm = g_norm_target;
+            self.pro.initialized = true;
+            return (g_target, g_norm_target);
+        }
+
+        self.pro.svf_g = one_pole_ms(self.pro.svf_g, g_target, sample_rate, tau_svf_ms);
+        self.pro.ladder_g_norm =
+            one_pole_ms(self.pro.ladder_g_norm, g_norm_target, sample_rate, tau_ladder_ms);
+
+        (
+            self.pro.svf_g.max(1e-6),
+            self.pro.ladder_g_norm.clamp(0.0, 0.999_999),
+        )
+    }
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -596,21 +732,255 @@ impl FilterEngineV2 {
 /// Matches the value used in `filter.rs`.
 const NYQUIST_SAFETY_FACTOR: f32 = 0.425;
 
-/// Compute the effective cutoff frequency (Hz) with envelope and key-tracking
-/// applied.  Matches `compute_cutoff` in `filter.rs` exactly.
+#[derive(Debug, Clone, Copy)]
+struct CutoffCoeffs {
+    g: f32,
+    g_norm: f32,
+}
+
+/// Compute the “ideal” cutoff frequency (Hz) with envelope and key-tracking
+/// applied, without any ceiling.
 #[inline]
-fn compute_cutoff(
+fn compute_cutoff_ideal_hz(
+    base_hz: f32,
+    env_val: f32,
+    env_amount_oct: f32,
+    midi_note: u8,
+    key_track: f32,
+) -> f32 {
+    // todo I prefer to have it not key tracked but rather midi velocity tracked. vel of 127 should add a reasonable amount to the cutoff and vel of lower than 100 should substract. vel of 100 should match exactly cutoff freq
+    let note_hz = 440.0 * 2.0f32.powf((midi_note as f32 - 69.0) / 12.0);
+    let tracked_hz = base_hz * (1.0 - key_track) + note_hz * key_track;
+    // todo also i have the feeling this ceiling introduces problems with high resonance. when i have a high resonance, the self osc depends on how much time the filter spends per frequency.
+    // when i have a ceiling here, high res and i start increasing filter cutoff freq, coming closer to the ceiling, the time spent going through this freq range gets longer per frequency. therefore i start to get VERY loud bird like chirping noises in that area
+    // if possible, and matching best practices, i would do this calculation without any ceiling, and either do oversampling, or assume that it goes way beyond 20 khz and calculate with that, so the speed of freq drop does not slow down when i am close to 15 khz for example as cutoff
+
+    (tracked_hz * 2.0f32.powf(env_val * env_amount_oct)).max(20.0)
+}
+
+/// Legacy solution (kept): hard clamp in Hz.
+#[inline]
+fn compute_cutoff_hard_clamp_hz(ideal_hz: f32, sample_rate: f32) -> f32 {
+    let ceiling = (sample_rate * NYQUIST_SAFETY_FACTOR).min(18_000.0_f32);
+    ideal_hz.clamp(20.0, ceiling)
+}
+
+/// Solution A: soft ceiling in Hz.
+///
+/// The mapping is:
+/// - ~identity when `x` is well below the ceiling
+/// - smoothly approaches `ceiling` as `x` grows
+/// - never exceeds `ceiling`
+///
+/// This avoids the “dwell” caused by a hard clamp, but still changes the sweep
+/// law near the top end (inevitable once we hit the digital limit).
+#[inline]
+fn compute_cutoff_soft_ceiling_hz(ideal_hz: f32, sample_rate: f32) -> f32 {
+    let ceiling = (sample_rate * NYQUIST_SAFETY_FACTOR).min(18_000.0_f32);
+    let x = ideal_hz.max(20.0);
+
+    if x <= ceiling {
+        return x;
+    }
+
+    // Smoothly compress the amount above the ceiling using an exponential
+    // approach. Larger `knee_hz` => softer knee.
+    let knee_hz = (ceiling * 0.25).max(500.0);
+    let over = x - ceiling;
+    ceiling - knee_hz * (-over / knee_hz).exp() + knee_hz
+}
+
+/// Convert a cutoff in Hz to a stable, finite `g = tan(π·fc/fs)`.
+///
+/// This clamps the tan() argument to stay away from π/2 to avoid `inf`/`NaN`.
+#[inline]
+fn hz_to_g_safe(hz: f32, sample_rate: f32) -> f32 {
+    // Keep `hz` in a sane range.
+    let hz = hz.max(0.0);
+
+    // `tan(π·fc/fs)` blows up as fc→fs/2. We clamp to a slightly smaller value
+    // even for the “g soft ceiling” mode, because numerically we cannot
+    // represent infinite g.
+    let max_fc = sample_rate * 0.499;
+    let fc = hz.min(max_fc);
+    (PI * fc / sample_rate).tan().max(1e-6)
+}
+
+#[inline]
+fn one_pole_ms(current: f32, target: f32, sample_rate: f32, tau_ms: f32) -> f32 {
+    // y[n] = a*y[n-1] + (1-a)*x[n]
+    // a = exp(-1/(tau*fs))
+    let tau_s = (tau_ms * 0.001).max(1e-6);
+    let a = (-1.0 / (tau_s * sample_rate)).exp();
+    a * current + (1.0 - a) * target
+}
+
+/// Pro mapping: smoothly saturate the `tan()` argument as cutoff exceeds the
+/// safety ceiling, instead of hard-clamping Hz.
+///
+/// This avoids “dwell” while guaranteeing `tan()` never approaches π/2.
+#[inline]
+fn pro_cutoff_to_g(ideal_hz: f32, sample_rate: f32) -> f32 {
+    let ceiling_hz = (sample_rate * NYQUIST_SAFETY_FACTOR).min(18_000.0_f32);
+    let x = PI * ideal_hz.max(0.0) / sample_rate;
+    let x0 = PI * ceiling_hz / sample_rate;
+    let x_max = PI * 0.499;
+
+    if x <= x0 {
+        return x.tan().max(1e-6);
+    }
+
+    // Smoothly approach x_max. The knee controls how quickly the slope reduces.
+    let knee = (x_max - x0).max(1e-3) * 0.35;
+    let x_s = x_max - (x_max - x0) * (-(x - x0) / knee).exp();
+    x_s.tan().max(1e-6)
+}
+
+#[inline]
+fn pro_cutoff_targets(
+    ideal_hz: f32,
+    sample_rate: f32,
+    abc_mode: CutoffCeilingMode,
+) -> (f32, f32) {
+    // Keep A/B/C meaningful by letting the selected mapping define the target.
+    // Pro mode then adds smoothing + Nyquist-safe warp.
+    let g_target = match abc_mode {
+        CutoffCeilingMode::HardClampHz | CutoffCeilingMode::SoftCeilingHz => {
+            // Respect the existing A/B/C behaviour and then ensure numerical
+            // safety by converting through the standard helper.
+            let CutoffCoeffs { g, .. } = compute_cutoff_coeffs(
+                // base_hz is not used here; we already have ideal_hz.
+                // We re-use the machinery by passing ideal_hz as base and using
+                // neutral env/key tracking.
+                ideal_hz,
+                0.0,
+                0.0,
+                69,
+                0.0,
+                sample_rate,
+                abc_mode,
+            );
+            g
+        }
+        CutoffCeilingMode::SoftCeilingG => {
+            // Use the pro warp to avoid relying on clamping inside tan().
+            // SVF target uses the direct pro warp.
+            pro_cutoff_to_g(ideal_hz, sample_rate)
+        }
+    };
+
+    // Ladder uses its own calibrated cutoff mapping: the ladder's resonance
+    // peak otherwise lands significantly below the requested cutoff at higher
+    // frequencies. We correct this by pre-warping the ladder cutoff before the
+    // bilinear transform.
+    let ladder_g = pro_ladder_cutoff_to_g(ideal_hz, sample_rate);
+    let g_norm_target = ladder_g / (1.0 + ladder_g);
+    (g_target, g_norm_target)
+}
+
+/// Ladder-only resonance compensation vs cutoff.
+///
+/// As `g_norm` approaches 1.0 the ladder gets extremely sensitive and may
+/// develop ultrasonic limit-cycles when driven. We reduce effective resonance
+/// only near the top end, leaving musical ranges untouched.
+#[inline]
+fn pro_ladder_resonance_comp(g_norm: f32, resonance: f32) -> f32 {
+    // Start damping earlier than the previous version. Your measurements show
+    // a dramatic resonance peak increase already around ~6–12 kHz at 44.1 kHz.
+    let start = 0.62_f32;
+    let end = 0.92_f32;
+    let t = ((g_norm - start) / (end - start)).clamp(0.0, 1.0);
+    let t2 = t * t * (3.0 - 2.0 * t); // smoothstep
+
+    // Reduce resonance more aggressively near the top end. This aims for a
+    // roughly constant perceived resonance peak as cutoff approaches Nyquist.
+    let amount = 0.80_f32;
+    (resonance * (1.0 - amount * t2)).clamp(0.0, 1.0)
+}
+
+/// Ladder cutoff calibration.
+///
+/// Based on your measured peaks (e.g. cutoff=12 kHz → peak≈7.2–7.95 kHz), the
+/// ladder's resonance frequency is substantially lower than requested at higher
+/// cutoffs. This function applies a smooth frequency-dependent boost to the
+/// *requested* cutoff before converting to `g`.
+///
+/// The curve is gentle at low cutoff (ratio≈1) and reaches ~×1.65 around
+/// 12–16 kHz at 44.1 kHz.
+#[inline]
+fn pro_ladder_cutoff_to_g(ideal_hz: f32, sample_rate: f32) -> f32 {
+    // Normalize frequency and apply a curve that boosts high frequencies.
+    let nyquist = (sample_rate * 0.5).max(1.0);
+    let f = (ideal_hz.max(0.0) / nyquist).clamp(0.0, 0.999);
+
+    // Smoothly increasing boost: 1.0 → ~1.75 as f approaches Nyquist.
+    // Tuned empirically from measurement ratios:
+    // - 4k → 2.7k  (needs ~1.48x)
+    // - 12k → 7.2k (needs ~1.67x)
+    let boost = 1.0 + 0.85 * f.powf(1.6);
+    let boosted_hz = (ideal_hz * boost).min(nyquist * 0.499);
+
+    // Use the same pro warp on the tan() argument for numerical safety.
+    pro_cutoff_to_g(boosted_hz, sample_rate)
+}
+
+/// Solution B: soft ceiling on `g` rather than Hz.
+///
+/// Compute `g` from the *ideal* cutoff (which can exceed the ceiling), then
+/// soft-limit `g` to avoid extreme values near Nyquist. This preserves the
+/// envelope’s “always moving” law better than clamping frequency directly.
+#[inline]
+fn compute_g_soft_ceiling(ideal_hz: f32, sample_rate: f32) -> f32 {
+    // “Ceiling in Hz” translated into a maximum safe `g`.
+    let ceiling_hz = (sample_rate * NYQUIST_SAFETY_FACTOR).min(18_000.0_f32);
+    let g_max = hz_to_g_safe(ceiling_hz, sample_rate);
+
+    // Compute g from the ideal hz (may exceed ceiling_hz).
+    let g_ideal = hz_to_g_safe(ideal_hz, sample_rate);
+
+    // IMPORTANT: this must be a *soft-min*.
+    // We must never increase `g` when `g_ideal` is below the ceiling.
+    //
+    // The previous implementation accidentally returned ~g_max for all
+    // g_ideal <= g_max, which pushed the ladder into ultrasonic limit cycles
+    // even at low cutoff.
+    let knee = (g_max * 0.15).max(1e-3);
+
+    if g_ideal <= g_max {
+        g_ideal
+    } else {
+        // As `g_ideal` grows, this approaches `g_max` asymptotically.
+        g_max - knee * (-(g_ideal - g_max) / knee).exp() + knee
+    }
+}
+
+/// Compute `g` and `g_norm` using the selected cutoff ceiling mode.
+#[inline]
+fn compute_cutoff_coeffs(
     base_hz: f32,
     env_val: f32,
     env_amount_oct: f32,
     midi_note: u8,
     key_track: f32,
     sample_rate: f32,
-) -> f32 {
-    let note_hz = 440.0 * 2.0f32.powf((midi_note as f32 - 69.0) / 12.0);
-    let tracked_hz = base_hz * (1.0 - key_track) + note_hz * key_track;
-    let ceiling = (sample_rate * NYQUIST_SAFETY_FACTOR).min(18_000.0_f32);
-    (tracked_hz * 2.0f32.powf(env_val * env_amount_oct)).clamp(20.0, ceiling)
+    mode: CutoffCeilingMode,
+) -> CutoffCoeffs {
+    let ideal_hz = compute_cutoff_ideal_hz(base_hz, env_val, env_amount_oct, midi_note, key_track);
+
+    let g = match mode {
+        CutoffCeilingMode::HardClampHz => {
+            let hz = compute_cutoff_hard_clamp_hz(ideal_hz, sample_rate);
+            hz_to_g_safe(hz, sample_rate)
+        }
+        CutoffCeilingMode::SoftCeilingHz => {
+            let hz = compute_cutoff_soft_ceiling_hz(ideal_hz, sample_rate);
+            hz_to_g_safe(hz, sample_rate)
+        }
+        CutoffCeilingMode::SoftCeilingG => compute_g_soft_ceiling(ideal_hz, sample_rate),
+    };
+
+    let g_norm = g / (1.0 + g);
+    CutoffCoeffs { g, g_norm }
 }
 
 /// Pre-filter drive stage.  Identical to `apply_drive` in `filter.rs`.

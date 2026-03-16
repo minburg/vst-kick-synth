@@ -41,12 +41,14 @@ mod nam;
 
 // ── Re-exports (public surface used by editor / presets) ────────────────────────
 
-pub use filter::{FilterPosition, FilterType};
+// pub use filter::{FilterPosition, FilterType};
+pub use filter_v2::{FilterPosition, FilterType};
 pub use filter_v2::FilterStyle;
 pub use params::{KickParams, NamModel};
 
 use corrosion::CorrosionState;
-use filter::FilterEngine;
+// use filter::FilterEngine;
+use filter_v2::FilterEngineV2;
 use voice::{EnvelopePhase, SmoothedParams, VoiceState};
 
 // ── NAM model selection ─────────────────────────────────────────────────────────
@@ -80,6 +82,7 @@ fn model_pre_input_db(model: NamModel) -> f32 {
         NamModel::PhilipsEL3541D => 0.0,
         NamModel::CultureVulture => 0.0,
         NamModel::JH24           => 15.0,
+        NamModel::ARTPRO         => 0.0
     }
 }
 
@@ -91,6 +94,7 @@ fn model_reference_trim_db(model: NamModel) -> f32 {
         NamModel::PhilipsEL3541D => -5.0,
         NamModel::CultureVulture => -2.0,
         NamModel::JH24           =>  3.0,
+        NamModel::ARTPRO         => -3.0
     }
 }
 
@@ -135,7 +139,7 @@ pub struct KickSynth {
     nam_pre_input_scale: f32,
 
     /// Filter engine: Moog Ladder + TPT SVF, stereo, with its own ADSR envelope.
-    filter_engine: FilterEngine,
+    filter_engine: FilterEngineV2,
     /// Cached last filter position — used to detect changes and clear stale state.
     last_filter_position: FilterPosition,
     /// Cached last filter type — used to detect changes and clear stale state.
@@ -225,7 +229,7 @@ impl Default for KickSynth {
             nam_calibration_gain: 1.0,
             nam_pre_input_scale: 1.0,
 
-            filter_engine: FilterEngine::default(),
+            filter_engine: FilterEngineV2::default(),
             last_filter_position: FilterPosition::PostNam,
             last_filter_type: FilterType::LP24,
 
@@ -336,6 +340,7 @@ impl Plugin for KickSynth {
                     NamModel::PhilipsEL3541D => params::NAM_MODEL_PHILIPS,
                     NamModel::CultureVulture => params::NAM_MODEL_CULTURE_VULTURE,
                     NamModel::JH24 => params::NAM_MODEL_JH24,
+                    NamModel::ARTPRO => params::NAM_MODEL_ART_PRO,
                 };
 
                 match self.nam_synth.load_model_content(content) {
@@ -395,6 +400,7 @@ impl Plugin for KickSynth {
 
         let filter_active   = self.params.filter_active.value();
         let filter_type     = self.params.filter_type.value();
+        let filter_style     = self.params.filter_style.value();
         let filter_position = self.params.filter_position.value();
         let filter_env_amount  = self.params.filter_env_amount.value();
         let filter_env_attack  = self.params.filter_env_attack.value();
@@ -520,7 +526,7 @@ impl Plugin for KickSynth {
                 let cutoff    = self.params.filter_cutoff.smoothed.next();
                 let resonance = self.params.filter_resonance.smoothed.next();
                 self.mono_buffer[i] = self.filter_engine.process_mono(
-                    self.mono_buffer[i], self.sample_rate, filter_type,
+                    self.mono_buffer[i], self.sample_rate, filter_type, filter_style,
                     cutoff, resonance, filter_env_amount,
                     filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
                     filter_drive, filter_midi_note, filter_key_track,
@@ -548,7 +554,7 @@ impl Plugin for KickSynth {
                 let cutoff    = self.params.filter_cutoff.smoothed.next();
                 let resonance = self.params.filter_resonance.smoothed.next();
                 self.nam_output_buffer[i] = self.filter_engine.process_mono(
-                    self.nam_output_buffer[i], self.sample_rate, filter_type,
+                    self.nam_output_buffer[i], self.sample_rate, filter_type, filter_style,
                     cutoff, resonance, filter_env_amount,
                     filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
                     filter_drive, filter_midi_note, filter_key_track,
@@ -583,7 +589,7 @@ impl Plugin for KickSynth {
                 let cutoff    = self.params.filter_cutoff.smoothed.next();
                 let resonance = self.params.filter_resonance.smoothed.next();
                 let (fl, fr) = self.filter_engine.process_stereo(
-                    out_l, out_r, self.sample_rate, filter_type,
+                    out_l, out_r, self.sample_rate, filter_type, filter_style,
                     cutoff, resonance, filter_env_amount,
                     filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
                     filter_drive, filter_midi_note, filter_key_track,

@@ -1,9 +1,25 @@
 use serde::{Deserialize, Serialize};
 use crate::{FilterPosition, FilterType, NamModel};
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum PresetOrigin {
+    #[serde(rename = "Factory")]
+    Factory,
+    #[serde(rename = "User")]
+    User,
+}
+
+impl Default for PresetOrigin {
+    fn default() -> Self {
+        PresetOrigin::Factory
+    }
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct Preset {
     pub name: String,
+    #[serde(default)]
+    pub origin: PresetOrigin,
     pub tune: f32,
     pub waveform: i32,
     pub sweep: f32,
@@ -31,6 +47,8 @@ pub struct Preset {
     #[serde(default)]
     pub output_gain: f32,
     pub nam_model: NamModel,
+    #[serde(default)]
+    pub categories: Vec<String>,
     // Filter — all fields have #[serde(default)] so existing presets without
     // these keys simply use the defaults (filter off, LP24, PostNam, etc.).
     #[serde(default)]
@@ -75,6 +93,7 @@ impl Default for Preset {
     fn default() -> Self {
         Self {
             name: "Default".to_string(),
+            origin: PresetOrigin::Factory,
             tune: 44.0,
             waveform: 1,
             sweep: 239.0,
@@ -114,6 +133,7 @@ impl Default for Preset {
             filter_env_trigger: true,
             filter_drive: 0.0,
             filter_key_track: 0.0,
+            categories: Vec::new(),
         }
     }
 }
