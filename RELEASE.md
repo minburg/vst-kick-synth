@@ -32,14 +32,24 @@ The workflow includes a `get_version` step that handles the naming conventions a
 
 ---
 ## 3. Bundle & Zip Handling
-Because VST3 plugins are handled differently across operating systems, the workflow applies specific packaging logic to ensure the plugins remain functional after download.
+The workflow builds multiple plugin formats and packages them per platform.
 
 ### Windows (x64)
 
-The Windows build generates a `.vst3` file (essentially a renamed DLL). These are zipped into a standard archive for easy extraction into the `Common Files/VST3` directory.
+The Windows build generates:
+- `kick_synth.vst3` — a VST3 plugin (single DLL file)
+- `kick_synth.clap` — a CLAP plugin (single DLL file)
+
+Both are zipped into a standard archive for easy extraction.
+
 ### macOS (Universal)
 
-On macOS, a VST3 is a Bundle (a specific directory structure). Direct uploads to GitHub often mangle folder permissions or strip metadata.
+The macOS build produces a universal binary (Apple Silicon + Intel) and generates:
+- `kick_synth.vst3/` — a VST3 bundle
+- `kick_synth.clap/` — a CLAP bundle
+- `Kick Synth.component/` — an Audio Unit v2 bundle (wraps the CLAP via [clap-wrapper](https://github.com/free-audio/clap-wrapper))
+
+The Audio Unit bundle is self-contained: the CLAP binary is embedded inside it under `Contents/PlugIns/`, so installing only the `.component` is sufficient for Logic Pro and other AU hosts.
 
 ### IMPORTANT: Preserving Permissions
 The workflow uses `zip -ry` for macOS:
@@ -49,7 +59,12 @@ The workflow uses `zip -ry` for macOS:
 ---
 
 ## 4. Post-Release: Gatekeeper Bypass (macOS)
-Since these builds are not code-signed or notarized, macOS users must clear the "quarantine" flag after moving the plugin to their `/Library/Audio/Plug-Ins/VST3/` folder:
+Since these builds are not code-signed or notarized, macOS users must clear the "quarantine" flag after installing the plugin. For example:
 ```bash
+# VST3
 sudo xattr -rd com.apple.quarantine /Library/Audio/Plug-Ins/VST3/kick_synth.vst3
+# CLAP
+sudo xattr -rd com.apple.quarantine /Library/Audio/Plug-Ins/CLAP/kick_synth.clap
+# Audio Unit
+sudo xattr -rd com.apple.quarantine /Library/Audio/Plug-Ins/Components/"Kick Synth.component"
 ```
