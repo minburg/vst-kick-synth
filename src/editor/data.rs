@@ -252,6 +252,7 @@ pub fn emit_params_events(cx: &mut EventContext, params: &Arc<KickParams>, prese
     emit(cx, &params.filter_env_release, preset.filter_env_release);
     emit(cx, &params.filter_drive, preset.filter_drive);
     emit(cx, &params.filter_key_track, preset.filter_key_track);
+    emit(cx, &params.filter_wet_dry, preset.filter_wet_dry);
 }
 // ── Data constructor ─────────────────────────────────────────────────────────────
 impl Data {
@@ -298,6 +299,27 @@ impl Data {
     fn compute_category_names(&self, bank_index: usize) -> Vec<String> {
         let mut seen = HashSet::new();
         let mut result = Vec::new();
+
+        // For the user bank, also include names of any subdirectories so that
+        // categories appear even before the first preset is saved into them
+        // (useful when the user manually creates category folders).
+        if bank_index == 1 {
+            let user_dir = self.user_preset_dir.join("user");
+            if let Ok(read_dir) = user_dir.read_dir() {
+                let mut dirs: Vec<_> = read_dir.flatten()
+                    .filter(|e| e.path().is_dir())
+                    .collect();
+                dirs.sort_by_key(|e| e.path());
+                for entry in dirs {
+                    if let Some(name) = entry.file_name().to_str() {
+                        if seen.insert(name.to_string()) {
+                            result.push(name.to_string());
+                        }
+                    }
+                }
+            }
+        }
+
         for preset in self.presets_for_bank(bank_index) {
             let category = preset
                 .categories

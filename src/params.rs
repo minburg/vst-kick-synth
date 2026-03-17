@@ -216,6 +216,10 @@ pub struct KickParams {
     /// How much the MIDI note frequency shifts the cutoff (0 = off, 1 = full).
     #[id = "filter_key_track"]
     pub filter_key_track: FloatParam,
+
+    /// Parallel wet/dry mix for the filter (0.0 = fully dry / bypass, 1.0 = fully wet).
+    #[id = "filter_wet_dry"]
+    pub filter_wet_dry: FloatParam,
 }
 
 impl KickParams {
@@ -262,6 +266,7 @@ impl KickParams {
             filter_env_trigger: self.filter_env_trigger.value(),
             filter_drive: self.filter_drive.value(),
             filter_key_track: self.filter_key_track.value(),
+            filter_wet_dry: self.filter_wet_dry.value(),
             categories: Vec::new(),
         }
     }
@@ -612,6 +617,15 @@ impl Default for KickParams {
             )
             .with_unit("%")
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
+
+            filter_wet_dry: FloatParam::new(
+                "Mix",
+                1.0,
+                FloatRange::Linear { min: 0.0, max: 1.0 },
+            )
+            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_smoother(SmoothingStyle::Linear(20.0)),
         }
     }
 }

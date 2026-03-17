@@ -106,9 +106,6 @@ pub enum CutoffCeilingMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum InternalFilterTuning {
-    /// Use the public A/B/C ceiling strategy directly, no additional
-    /// coefficient smoothing or ladder-specific stabilization.
-    Abc,
     /// Pro path: smooth cutoff warp near Nyquist + coefficient smoothing +
     /// ladder resonance compensation at high cutoff.
     Pro,
@@ -506,18 +503,6 @@ impl FilterEngineV2 {
         const CUTOFF_CEILING_MODE: CutoffCeilingMode = CutoffCeilingMode::SoftCeilingG;
 
         let (g, g_norm) = match INTERNAL_TUNING {
-            InternalFilterTuning::Abc => {
-                let CutoffCoeffs { g, g_norm } = compute_cutoff_coeffs(
-                    cutoff_hz,
-                    env_val,
-                    env_amount_oct,
-                    midi_note,
-                    key_track,
-                    sample_rate,
-                    CUTOFF_CEILING_MODE,
-                );
-                (g, g_norm)
-            }
             InternalFilterTuning::Pro => {
                 let ideal_hz =
                     compute_cutoff_ideal_hz(cutoff_hz, env_val, env_amount_oct, midi_note, key_track);
@@ -617,18 +602,6 @@ impl FilterEngineV2 {
         const CUTOFF_CEILING_MODE: CutoffCeilingMode = CutoffCeilingMode::SoftCeilingG;
 
         let (g, g_norm) = match INTERNAL_TUNING {
-            InternalFilterTuning::Abc => {
-                let CutoffCoeffs { g, g_norm } = compute_cutoff_coeffs(
-                    cutoff_hz,
-                    env_val,
-                    env_amount_oct,
-                    midi_note,
-                    key_track,
-                    sample_rate,
-                    CUTOFF_CEILING_MODE,
-                );
-                (g, g_norm)
-            }
             InternalFilterTuning::Pro => {
                 let ideal_hz =
                     compute_cutoff_ideal_hz(cutoff_hz, env_val, env_amount_oct, midi_note, key_track);

@@ -733,7 +733,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
         .width(Stretch(0.23))
         .class("filter-ctrl-group");
 
-        // ── Core params: Cutoff, Resonance, Trigger Mode, Key Track ──────────────
+        // ── Core params: Cutoff, Resonance, Mix, Trigger Mode, Key Track ──────────────
         HStack::new(cx, |cx| {
             SingleKnob::new(
                 cx,
@@ -749,6 +749,16 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
                 cx,
                 Data::params,
                 |p| &p.filter_resonance,
+                false,
+                80.0,
+                "vintage-knob-poti1",
+            )
+            .width(Stretch(1.0));
+            Element::new(cx).width(Stretch(0.2));
+            SingleKnob::new(
+                cx,
+                Data::params,
+                |p| &p.filter_wet_dry,
                 false,
                 80.0,
                 "vintage-knob-poti1",
@@ -775,7 +785,7 @@ pub fn build_filter_section(params: &Arc<KickParams>, cx: &mut Context) {
             )
             .width(Stretch(1.0));
         })
-        .width(Stretch(0.31))
+        .width(Stretch(0.38))
         .class("filter-ctrl-group");
 
         // ── Filter Envelope: Amount, A, D, S, R ──────────────────────────

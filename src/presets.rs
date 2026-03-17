@@ -79,6 +79,9 @@ pub struct Preset {
     pub filter_drive: f32,
     #[serde(default)]
     pub filter_key_track: f32,
+    /// Filter wet/dry mix (1.0 = fully wet; 0.0 = bypass). Default 1.0 for backward compat.
+    #[serde(default = "default_filter_wet_dry")]
+    pub filter_wet_dry: f32,
 }
 
 fn default_filter_cutoff()      -> f32 { 2000.0 }
@@ -88,6 +91,7 @@ fn default_filter_env_attack()  -> f32 { 5.0 }
 fn default_filter_env_decay()   -> f32 { 300.0 }
 fn default_filter_env_release() -> f32 { 200.0 }
 fn default_filter_env_trigger() -> bool { true }
+fn default_filter_wet_dry()     -> f32 { 1.0 }
 
 impl Default for Preset {
     fn default() -> Self {
@@ -133,6 +137,7 @@ impl Default for Preset {
             filter_env_trigger: true,
             filter_drive: 0.0,
             filter_key_track: 0.0,
+            filter_wet_dry: 1.0,
             categories: Vec::new(),
         }
     }

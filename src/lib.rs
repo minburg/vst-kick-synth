@@ -81,8 +81,8 @@ fn model_pre_input_db(model: NamModel) -> f32 {
     match model {
         NamModel::PhilipsEL3541D => 0.0,
         NamModel::CultureVulture => 0.0,
-        NamModel::JH24           => 15.0,
-        NamModel::ARTPRO         => 0.0
+        NamModel::JH24           => 28.0,
+        NamModel::ARTPRO         => 22.0
     }
 }
 
@@ -91,10 +91,10 @@ fn model_pre_input_db(model: NamModel) -> f32 {
 #[cfg(feature = "nam")]
 fn model_reference_trim_db(model: NamModel) -> f32 {
     match model {
-        NamModel::PhilipsEL3541D => -5.0,
+        NamModel::PhilipsEL3541D => -3.5,
         NamModel::CultureVulture => -2.0,
-        NamModel::JH24           =>  3.0,
-        NamModel::ARTPRO         => -3.0
+        NamModel::JH24           =>  14.5,
+        NamModel::ARTPRO         =>  14.0
     }
 }
 
@@ -409,6 +409,7 @@ impl Plugin for KickSynth {
         let filter_env_release = self.params.filter_env_release.value();
         let filter_drive     = self.params.filter_drive.value();
         let filter_key_track = self.params.filter_key_track.value();
+        let filter_wet_dry   = self.params.filter_wet_dry.value();
         let filter_midi_note = self.voice.midi_note;
 
         if filter_type != self.last_filter_type || filter_position != self.last_filter_position {
@@ -426,7 +427,7 @@ impl Plugin for KickSynth {
                 self.debug_phase += 1.0 / self.sample_rate;
                 if self.debug_phase >= 0.5 {
                     self.debug_phase -= 0.5;
-                    self.trigger_note(0.8, 12);
+                    self.trigger_note(0.8, 36);
                     self.debug_release_timer = 0.2 * self.sample_rate;
                 }
                 if self.debug_release_timer > 0.0 {
@@ -523,14 +524,16 @@ impl Plugin for KickSynth {
         // Filter — PreNam position
         if filter_active && filter_position == FilterPosition::PreNam {
             for i in 0..num_samples {
+                let dry = self.mono_buffer[i];
                 let cutoff    = self.params.filter_cutoff.smoothed.next();
                 let resonance = self.params.filter_resonance.smoothed.next();
-                self.mono_buffer[i] = self.filter_engine.process_mono(
-                    self.mono_buffer[i], self.sample_rate, filter_type, filter_style,
+                let wet = self.filter_engine.process_mono(
+                    dry, self.sample_rate, filter_type, filter_style,
                     cutoff, resonance, filter_env_amount,
                     filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
                     filter_drive, filter_midi_note, filter_key_track,
                 );
+                self.mono_buffer[i] = wet * filter_wet_dry + dry * (1.0 - filter_wet_dry);
             }
         }
 
@@ -551,14 +554,16 @@ impl Plugin for KickSynth {
         // Filter — PostNam position
         if filter_active && filter_position == FilterPosition::PostNam {
             for i in 0..num_samples {
+                let dry = self.nam_output_buffer[i];
                 let cutoff    = self.params.filter_cutoff.smoothed.next();
                 let resonance = self.params.filter_resonance.smoothed.next();
-                self.nam_output_buffer[i] = self.filter_engine.process_mono(
-                    self.nam_output_buffer[i], self.sample_rate, filter_type, filter_style,
+                let wet = self.filter_engine.process_mono(
+                    dry, self.sample_rate, filter_type, filter_style,
                     cutoff, resonance, filter_env_amount,
                     filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
                     filter_drive, filter_midi_note, filter_key_track,
                 );
+                self.nam_output_buffer[i] = wet * filter_wet_dry + dry * (1.0 - filter_wet_dry);
             }
         }
 
@@ -594,8 +599,8 @@ impl Plugin for KickSynth {
                     filter_env_attack, filter_env_decay, filter_env_sustain, filter_env_release,
                     filter_drive, filter_midi_note, filter_key_track,
                 );
-                out_l = fl;
-                out_r = fr;
+                out_l = fl * filter_wet_dry + out_l * (1.0 - filter_wet_dry);
+                out_r = fr * filter_wet_dry + out_r * (1.0 - filter_wet_dry);
             }
 
             let abs_l = out_l.abs();
