@@ -2,7 +2,7 @@
 
 This is a versatile Kick Drum Synthesizer VST3 plugin built with Rust, `nih-plug`, and `vizia`. It is designed to be a powerful tool for crafting a wide range of kick sounds, from deep and clean 808s to aggressive, textured, and distorted kicks for modern electronic music.
 
-![screenshot](kick_synth_0.2.1.png)
+![screenshot](kick_synth_0.3.0.png)
 
 ## Features
 

@@ -12,13 +12,13 @@ Make sure to push to main branch first before tagging.
 ### Step A: Create a Tag
 Use the `-a` flag for an annotated tag. This allows you to include a brief summary of the changes.
 ```bash
-git tag -a v1.0.4 -m "Fixed crackle polarity and gain staging"
+git tag -a v0.3.0 -m "Add new preset system, fixed the filter"
 ```
 
 ### Step B: Push to GitHub
 Pushing the tag specifically (not just the branch) initiates the GitHub Action.
 ```bash
-git push origin v1.0.4
+git push origin v0.3.0
 ```
 
 ---
