@@ -33,22 +33,22 @@ mod drive;
 mod editor;
 mod filter;
 mod filter_v2;
+mod filter_v3;
 mod params;
 mod presets;
 mod voice;
 #[cfg(feature = "nam")]
 mod nam;
-
 // ── Re-exports (public surface used by editor / presets) ────────────────────────
 
 // pub use filter::{FilterPosition, FilterType};
-pub use filter_v2::{FilterPosition, FilterType};
-pub use filter_v2::FilterStyle;
+pub use filter_v3::{FilterPosition, FilterType};
+pub use filter_v3::FilterStyle;
 pub use params::{KickParams, NamModel};
 
 use corrosion::CorrosionState;
 // use filter::FilterEngine;
-use filter_v2::FilterEngineV2;
+use filter_v3::FilterEngineV3;
 use voice::{EnvelopePhase, SmoothedParams, VoiceState};
 
 // ── NAM model selection ─────────────────────────────────────────────────────────
@@ -139,7 +139,7 @@ pub struct KickSynth {
     nam_pre_input_scale: f32,
 
     /// Filter engine: Moog Ladder + TPT SVF, stereo, with its own ADSR envelope.
-    filter_engine: FilterEngineV2,
+    filter_engine: FilterEngineV3,
     /// Cached last filter position — used to detect changes and clear stale state.
     last_filter_position: FilterPosition,
     /// Cached last filter type — used to detect changes and clear stale state.
@@ -229,7 +229,7 @@ impl Default for KickSynth {
             nam_calibration_gain: 1.0,
             nam_pre_input_scale: 1.0,
 
-            filter_engine: FilterEngineV2::default(),
+            filter_engine: FilterEngineV3::default(),
             last_filter_position: FilterPosition::PostNam,
             last_filter_type: FilterType::LP24,
 
