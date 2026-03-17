@@ -79,24 +79,36 @@ A built-in module for processing the sound through pre-trained neural network mo
 
 ### 4. The Filter
 
-A high-quality, resonant filter with its own full ADSR envelope. It can be inserted at three different points in the signal chain, which dramatically changes how it interacts with the drive and effects stages.
+A pro-grade resonant filter engine with its own full ADSR envelope. It can be inserted at three different points in the signal chain, which dramatically changes how it interacts with the drive and effects stages.
+
+The engine uses two distinct topologies depending on the selected filter type:
+
+- **LP 24 / HP 24** — a **true zero-delay-feedback (ZDF) 4-pole Moog ladder**. The resonance feedback loop is solved implicitly each sample using Newton-Raphson iteration (warm-started from the exact linear solution), so there is no one-sample feedback delay and no artificial loop-gain margin. The ladder runs at **2× internal oversampling**: each native-rate sample is processed twice at the doubled rate using linear-interpolation upsampling and a 2-tap FIR decimator, which pushes near-Nyquist instabilities far out of the audible range and eliminates the need for heuristic resonance damping at high cutoff frequencies.
+- **LP 12 / HP 12 / BP 12 / Notch** — Andy Simper's **topology-preserving transform (TPT) SVF** (State Variable Filter). Its implicit structure inherently handles its own feedback, giving accurate resonance behavior at all sample rates.
+
+Both topologies receive per-sample **IIR-smoothed coefficients** (2 ms time constant for the SVF, 6 ms for the ladder) to prevent zipper noise during fast envelope-driven sweeps.
 
 #### **Controls**
 - **Filter (ON/OFF):** Activates or bypasses the entire filter section.
 - **Type:** Selects the filter architecture:
-    - **LP 24:** 4-pole Moog Ladder lowpass. Warm and musical; self-oscillates at full resonance.
-    - **LP 12:** 2-pole TPT SVF lowpass. Lighter roll-off, more open sound.
-    - **HP 24:** 4-pole highpass based on the Moog Ladder topology.
+    - **LP 24:** 4-pole ZDF Moog ladder lowpass. Warm and musical; self-oscillates at full resonance.
+    - **LP 12:** 2-pole TPT SVF lowpass. Lighter 12 dB/oct roll-off, more open sound.
+    - **HP 24:** 4-pole ZDF Moog ladder highpass.
     - **HP 12:** 2-pole TPT SVF highpass.
-    - **BP 12:** 2-pole bandpass — isolates a frequency band.
-    - **Notch:** 2-pole band-reject — carves out a specific frequency.
+    - **BP 12:** 2-pole TPT SVF bandpass — isolates a frequency band.
+    - **Notch:** 2-pole TPT SVF band-reject — carves out a specific frequency.
+- **Style:** Selects the nonlinear saturation character applied inside the filter:
+    - **Clean:** Fully linear — no saturation anywhere in the signal path. Uses an exact closed-form solve for the ladder.
+    - **Classic:** Warm `tanh` saturation throughout the feedback path. Smooth and musical.
+    - **Raw:** High-gain asymmetric waveshaper with a 1.4× pre-gain. Aggressive and punchy.
+    - **Tube:** Asymmetric triode transfer curve with even-harmonic coloring. Organic and round.
 - **Position:** Where in the signal chain the filter is inserted:
     - **Pre NAM:** Before the NAM model. Shapes what the neural model "hears" — tighter, darker results.
     - **Post NAM:** After the NAM model, before Corrosion. The most common position for post-distortion tone shaping *(default)*.
     - **Post All:** After all processing, on the stereo bus. Acts as a master tone control.
-- **Cutoff:** The base cutoff frequency (20 Hz – 20 kHz, logarithmically scaled).
-- **Resonance:** Emphasis at the cutoff frequency. At maximum with LP 24 / HP 24, the filter self-oscillates.
-- **Drive:** Pre-filter input gain that gently saturates the signal before it enters the filter, adding harmonic richness.
+- **Cutoff:** The base cutoff frequency (20 Hz – 20 kHz, logarithmically scaled). The mapping uses a smooth Nyquist-safety compression that keeps the sweep law continuous all the way to the frequency ceiling — no hard clamp or audible dwell.
+- **Resonance:** Emphasis at the cutoff frequency. At maximum with LP 24 / HP 24, the filter self-oscillates. A Nyquist-aware loop-gain limiter (`k · G⁴ < 3.96`) automatically clamps feedback gain only when needed, preserving full resonance character well within the audible band. Output level is compensated by a topology-derived formula (`1 / (1 + k/8)`) so cranking resonance doesn't cause a large volume jump.
+- **Drive:** Pre-filter input gain (bypassed entirely for the Clean style to preserve full linearity). Gently saturates the signal before it enters the filter, adding harmonic richness.
 - **Key Track:** When greater than 0 %, the cutoff tracks the MIDI note pitch, keeping the filter tonally consistent across notes.
 
 #### **Filter Envelope**
@@ -111,6 +123,12 @@ A high-quality, resonant filter with its own full ADSR envelope. It can be inser
 - **Framework:** Built on `nih-plug`, a modern, Rust-native framework for creating audio plugins.
 - **GUI:** The user interface is rendered using `vizia`, a declarative GUI toolkit for Rust that is part of the `nih-plug` ecosystem.
 - **Synthesis:** All DSP (Digital Signal Processing) is written in pure Rust, including the oscillators, envelopes, filters, and distortion algorithms.
+- **Filter Engine:** The filter is a pro-grade ZDF (Zero-Delay Feedback) design:
+    - **4-pole Moog Ladder (LP 24 / HP 24):** Implicit per-sample solve — the resonance feedback loop has no delay. The Clean style uses an exact closed-form solution; all saturating styles (Classic, Raw, Tube) use 3-step Newton-Raphson iteration warm-started from the linear solution. The ladder runs at 2× internal oversampling (linear-interpolation upsampler → ladder × 2 → 2-tap FIR decimator) to eliminate near-Nyquist instability and bilinear-warp artefacts.
+    - **TPT SVF (LP 12 / HP 12 / BP 12 / Notch):** Andy Simper's topology-preserving transform SVF. Saturation is applied only to the BP integrator state so the pole structure remains unconditionally stable.
+    - **Coefficient smoothing:** Per-sample IIR smoothers on the cutoff coefficients (2 ms for SVF, 6 ms for ladder) prevent zipper noise during fast envelope sweeps.
+    - **Nyquist-aware resonance limiter:** The ladder feedback gain is clamped so the open-loop gain product `k · G⁴ < 3.96` at all times, guaranteeing stability without audibly limiting resonance within the audible band.
+    - **Topology-derived output compensation:** Level is normalised by `1 / (1 + k/8)`, where `k` is the actual feedback gain parameter, preventing large output jumps when resonance is increased.
 - **Signal Flow:**
     1.  A pitched oscillator (one of five waveform modes) and a texture generator run in parallel.
     2.  Their outputs are summed and processed by the amplitude ADSR envelope.

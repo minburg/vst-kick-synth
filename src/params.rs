@@ -1,3 +1,5 @@
+            .with_value_to_string(formatters::v2s_f32_percentage(0))
+            .with_smoother(SmoothingStyle::Linear(20.0)),
 /*
  * Copyright (C) 2026 Marinus Burger
  */
@@ -617,13 +619,12 @@ impl Default for KickParams {
             )
             .with_unit("%")
             .with_value_to_string(formatters::v2s_f32_percentage(0)),
-
+                "Wet/Dry",
             filter_wet_dry: FloatParam::new(
                 "Mix",
                 1.0,
                 FloatRange::Linear { min: 0.0, max: 1.0 },
-            )
-            .with_unit("%")
+            .with_value_to_string(formatters::v2s_f32_percentage(0)),
             .with_value_to_string(formatters::v2s_f32_percentage(0))
             .with_smoother(SmoothingStyle::Linear(20.0)),
         }
