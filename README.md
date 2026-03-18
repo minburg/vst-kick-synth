@@ -188,7 +188,7 @@ Because the plugin is not officially signed and notarized by Apple, you must man
 For those interested in the development process, the repository uses GitHub Actions to automate builds.
 
 ### Bundle & Zip Handling
-Because VST3 plugins are handled differently across operating systems, the workflow applies specific packaging logic to ensure the plugins remain functional after download.
+The workflow builds multiple plugin formats and packages them per platform.
 
-- **Windows (x64):** The Windows build generates a `.vst3` file (essentially a renamed DLL). These are zipped into a standard archive for easy extraction into the `Common Files/VST3` directory.
-- **macOS (Universal):** On macOS, a VST3 is a Bundle (a specific directory structure). Direct uploads to GitHub often mangle folder permissions or strip metadata. The workflow uses `zip -ry` to preserve the necessary symbolic links and executable permissions, ensuring the plugin remains loadable.
+- **Windows (x64):** Produces `kick_synth.vst3` (VST3) and `kick_synth.clap` (CLAP), both as single DLL files, zipped into a standard archive.
+- **macOS (Universal):** Produces `kick_synth.vst3` (VST3 bundle), `kick_synth.clap` (CLAP bundle), and `Kick Synth.component` (Audio Unit v2 bundle). The AUv2 is built using [clap-wrapper](https://github.com/free-audio/clap-wrapper) and embeds the CLAP binary inside, making it self-contained. The workflow uses `zip -ry` to preserve the necessary symbolic links and executable permissions.
