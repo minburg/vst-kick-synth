@@ -17,7 +17,7 @@ if(NOT DEFINED PLUGIN_VERSION OR NOT PLUGIN_VERSION MATCHES "^[0-9]+\\.[0-9]+")
     set(PLUGIN_VERSION "0.3.0")
 endif()
 
-project(kick-synth-auv2 VERSION ${PLUGIN_VERSION} LANGUAGES C CXX OBJC OBJCXX)
+project(kick-synth-auv2 VERSION ${PLUGIN_VERSION})
 
 if(NOT APPLE)
     message(FATAL_ERROR "AUv2 is only supported on macOS")
