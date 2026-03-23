@@ -71,7 +71,12 @@ jobs:
 
       - name: Build and Bundle (Windows)
         if: matrix.os == 'windows-latest'
-        shell: bash
+        # Use PowerShell so the MSVC toolchain is selected by cc/cxx-build.
+        # Running under Git Bash exposes MinGW tools (gcc/g++) earlier in PATH
+        # than MSVC, which previously caused the C++ code to be compiled with
+        # MinGW, producing binaries that need MinGW runtime DLLs not present on
+        # normal Windows machines (instant silent crash on load).
+        shell: pwsh
         run: cargo xtask bundle kick_synth --profile release
 
       # --- MACOS: Build Audio Unit v2 wrapper via clap-wrapper ---

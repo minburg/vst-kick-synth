@@ -1,6 +1,6 @@
 [package]
 name = "kick_synth"
-version = "0.3.5"
+version = "0.3.3"
 edition = "2021"
 authors = ["Marinus Burger <convolution_official@protonmail.com>"]
 license = "GPL-3.0-or-later"
