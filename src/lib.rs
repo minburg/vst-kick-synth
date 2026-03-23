@@ -246,7 +246,7 @@ impl Plugin for KickSynth {
     const VENDOR: &'static str = "Convolution DEV";
     const URL: &'static str = "https://github.com/minburg/vst-kick-synth";
     const EMAIL: &'static str = "email@example.com";
-    const VERSION: &'static str = "0.3.3";
+    const VERSION: &'static str = "0.3.5";
 
     const AUDIO_IO_LAYOUTS: &'static [AudioIOLayout] = &[AudioIOLayout {
         main_input_channels: NonZeroU32::new(2),
