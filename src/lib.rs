@@ -747,19 +747,3 @@ impl Vst3Plugin for KickSynth {
 }
 
 nih_export_vst3!(KickSynth);
-
-// ── CLAP export ──────────────────────────────────────────────────────────────────
-
-impl ClapPlugin for KickSynth {
-    const CLAP_ID: &'static str = "com.convolution-dev.kick-synth";
-    const CLAP_DESCRIPTION: Option<&'static str> = Some("A kick drum synthesizer plugin");
-    const CLAP_MANUAL_URL: Option<&'static str> = Some(Self::URL);
-    const CLAP_SUPPORT_URL: Option<&'static str> = Some(Self::URL);
-    const CLAP_FEATURES: &'static [ClapFeature] = &[
-        ClapFeature::Instrument,
-        ClapFeature::Synthesizer,
-        ClapFeature::DrumMachine,
-    ];
-}
-
-nih_export_clap!(KickSynth);

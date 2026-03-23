@@ -1,4 +1,4 @@
-name: Build and Release VST3 / CLAP / AUv2
+name: Build and Release VST3
 
 on:
   push:
@@ -43,64 +43,25 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: rustup target add x86_64-apple-darwin
 
-      - name: Build and Bundle (VST3 + CLAP)
+      - name: Build and Bundle
         run: |
           if [ "${{ matrix.os }}" == "macos-latest" ]; then
             # Build both architectures
             cargo build --release --target x86_64-apple-darwin --lib
             cargo build --release --target aarch64-apple-darwin --lib
-
-            # Generate bundle structure (VST3 + CLAP) using xtask
+          
+            # Generate bundle structure
             cargo xtask bundle kick_synth --profile release
-
-            # Stitch VST3 binary into a universal binary with lipo
+          
+            # Stitch binaries with lipo
             lipo -create \
               -output target/bundled/kick_synth.vst3/Contents/MacOS/kick_synth \
               target/x86_64-apple-darwin/release/libkick_synth.dylib \
               target/aarch64-apple-darwin/release/libkick_synth.dylib
-
-            # Stitch CLAP binary into a universal binary with lipo
-            lipo -create \
-              -output target/bundled/kick_synth.clap/Contents/MacOS/kick_synth \
-              target/x86_64-apple-darwin/release/libkick_synth.dylib \
-              target/aarch64-apple-darwin/release/libkick_synth.dylib
           else
-            # Windows build (produces both VST3 and CLAP)
+            # Windows build
             cargo xtask bundle kick_synth --profile release
           fi
-
-      # --- MACOS: Build Audio Unit v2 wrapper via clap-wrapper ---
-      - name: Install CMake and Ninja (macOS)
-        if: matrix.os == 'macos-latest'
-        run: brew install cmake ninja
-
-      - name: Clone clap-wrapper (macOS)
-        if: matrix.os == 'macos-latest'
-        run: git clone --depth 1 https://github.com/free-audio/clap-wrapper.git /tmp/clap-wrapper
-
-      - name: Build Audio Unit wrapper (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          cmake -G Ninja -B /tmp/au-build cmake/auv2 \
-            -DCLAP_WRAPPER_SOURCE_DIR=/tmp/clap-wrapper \
-            -DCLAP_BINARY_LOCATION="$(pwd)/target/bundled/kick_synth.clap" \
-            -DPLUGIN_VERSION="${GITHUB_REF_NAME#v}" \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_OSX_DEPLOYMENT_TARGET=10.13 \
-            -DCMAKE_BUILD_TYPE=Release
-          cmake --build /tmp/au-build --config Release
-
-      - name: Copy Audio Unit to bundled directory (macOS)
-        if: matrix.os == 'macos-latest'
-        run: |
-          # The bundle name matches OUTPUT_NAME in cmake/auv2/CMakeLists.txt
-          AU_PATH=$(find /tmp/au-build -name "Kick Synth.component" -maxdepth 4 | head -1)
-          if [ -z "$AU_PATH" ]; then
-            echo "ERROR: Could not find 'Kick Synth.component' in /tmp/au-build"
-            exit 1
-          fi
-          echo "Found AU bundle at: $AU_PATH"
-          cp -r "$AU_PATH" target/bundled/
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
@@ -127,9 +88,9 @@ jobs:
       - name: Zip Artifacts for Release
         run: |
           cd artifacts
-          # Zip Windows bundle (VST3 + CLAP)
+          # Zip Windows bundle
           zip -r ../kick_synth-v${{ steps.get_version.outputs.VERSION }}-win64.zip kick_synth-win-x64/*
-          # Zip macOS bundle (VST3 + CLAP + AUv2 — preserve symlinks and permissions)
+          # Zip macOS bundle (preserving symlinks and permissions)
           zip -ry ../kick_synth-v${{ steps.get_version.outputs.VERSION }}-macos.zip kick_synth-macos-universal/*
 
       - name: Create GitHub Release
