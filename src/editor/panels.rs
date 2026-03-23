@@ -257,7 +257,7 @@ pub fn build_center_amp_env(params: &Arc<KickParams>, cx: &mut Context) {
             VStack::new(cx, |cx| {
                 build_preset_header(cx);
 
-                Label::new(cx, "v0.3.3")
+                Label::new(cx, "v0.3.1")
                     .class("header-version-title")
                     .height(Stretch(0.5))
                     .width(Stretch(0.2))
