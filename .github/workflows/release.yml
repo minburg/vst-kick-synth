@@ -9,9 +9,6 @@ on:
 permissions:
   contents: write
 
-defaults:
-  run:
-    shell: bash
 
 jobs:
   package:
@@ -43,31 +40,44 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: rustup target add x86_64-apple-darwin
 
-      - name: Build and Bundle (VST3 + CLAP)
+      - name: Build and Bundle (macOS universal)
+        if: matrix.os == 'macos-latest'
+        shell: bash
         run: |
-          if [ "${{ matrix.os }}" == "macos-latest" ]; then
-            # Build both architectures
-            cargo build --release --target x86_64-apple-darwin --lib
-            cargo build --release --target aarch64-apple-darwin --lib
+          # Build both architectures
+          cargo build --release --target x86_64-apple-darwin --lib
+          cargo build --release --target aarch64-apple-darwin --lib
 
-            # Generate bundle structure (VST3 + CLAP) using xtask
-            cargo xtask bundle kick_synth --profile release
+          # Generate bundle structure (VST3 + CLAP) using xtask
+          cargo xtask bundle kick_synth --profile release
 
-            # Stitch VST3 binary into a universal binary with lipo
-            lipo -create \
-              -output target/bundled/kick_synth.vst3/Contents/MacOS/kick_synth \
-              target/x86_64-apple-darwin/release/libkick_synth.dylib \
-              target/aarch64-apple-darwin/release/libkick_synth.dylib
+          # Stitch VST3 binary into a universal binary with lipo
+          lipo -create \
+            -output target/bundled/kick_synth.vst3/Contents/MacOS/kick_synth \
+            target/x86_64-apple-darwin/release/libkick_synth.dylib \
+            target/aarch64-apple-darwin/release/libkick_synth.dylib
 
-            # Stitch CLAP binary into a universal binary with lipo
-            lipo -create \
-              -output target/bundled/kick_synth.clap/Contents/MacOS/kick_synth \
-              target/x86_64-apple-darwin/release/libkick_synth.dylib \
-              target/aarch64-apple-darwin/release/libkick_synth.dylib
-          else
-            # Windows build (produces both VST3 and CLAP)
-            cargo xtask bundle kick_synth --profile release
-          fi
+          # Stitch CLAP binary into a universal binary with lipo
+          lipo -create \
+            -output target/bundled/kick_synth.clap/Contents/MacOS/kick_synth \
+            target/x86_64-apple-darwin/release/libkick_synth.dylib \
+            target/aarch64-apple-darwin/release/libkick_synth.dylib
+
+          # lipo creates a new file with no code signature; re-apply ad-hoc
+          # signatures so macOS doesn't kill the plugin on load (required on
+          # Apple Silicon even for self-signed / non-notarised plugins).
+          codesign --force --deep -s - target/bundled/kick_synth.vst3
+          codesign --force --deep -s - target/bundled/kick_synth.clap
+
+      - name: Build and Bundle (Windows)
+        if: matrix.os == 'windows-latest'
+        # Use PowerShell so the MSVC toolchain is selected by cc/cxx-build.
+        # Running under Git Bash exposes MinGW tools (gcc/g++) earlier in PATH
+        # than MSVC, which previously caused the C++ code to be compiled with
+        # MinGW, producing binaries that need MinGW runtime DLLs not present on
+        # normal Windows machines (instant silent crash on load).
+        shell: pwsh
+        run: cargo xtask bundle kick_synth --profile release
 
       # --- MACOS: Build Audio Unit v2 wrapper via clap-wrapper ---
       - name: Install CMake and Ninja (macOS)
@@ -101,6 +111,10 @@ jobs:
           fi
           echo "Found AU bundle at: $AU_PATH"
           cp -r "$AU_PATH" target/bundled/
+
+          # CMake+Ninja does not ad-hoc sign the component; do it here so
+          # macOS doesn't kill it on load (required even without notarisation).
+          codesign --force --deep -s - "target/bundled/Kick Synth.component"
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
