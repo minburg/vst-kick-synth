@@ -76,7 +76,7 @@ jobs:
 
       - name: Clone clap-wrapper (macOS)
         if: matrix.os == 'macos-latest'
-        run: git clone --depth 1 --branch v0.14.0 https://github.com/free-audio/clap-wrapper.git /tmp/clap-wrapper
+        run: git clone --depth 1 https://github.com/free-audio/clap-wrapper.git /tmp/clap-wrapper
 
       - name: Build Audio Unit wrapper (macOS)
         if: matrix.os == 'macos-latest'

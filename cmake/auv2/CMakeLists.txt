@@ -31,20 +31,6 @@ if(NOT DEFINED CLAP_WRAPPER_SOURCE_DIR)
     message(FATAL_ERROR "CLAP_WRAPPER_SOURCE_DIR must be set to the path of a free-audio/clap-wrapper checkout")
 endif()
 
-# clap-wrapper and AudioUnitSDK require C++17. When clap-wrapper is included via
-# add_subdirectory its top-level guard (PROJECT_IS_TOP_LEVEL) does NOT fire, so
-# CMAKE_CXX_STANDARD would remain unset and compilation fails with errors like
-# "static_assert with no message is a C++17 extension", "std::byte not found",
-# and "lock_guard requires template arguments". Set the standard explicitly here
-# so that it propagates to all sub-projects.
-set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
-# Objective-C++ files (e.g. mac_helpers.mm) have their own language standard
-# variable; without this, std::string::data() returns const char* (C++14 behaviour)
-# which causes a compile error when passed to CFStringGetCString.
-set(CMAKE_OBJCXX_STANDARD 17)
-set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
-
 # Let clap-wrapper download the CLAP SDK and AudioUnitSDK automatically via CPM
 set(CLAP_WRAPPER_DOWNLOAD_DEPENDENCIES ON CACHE BOOL "" FORCE)
 
