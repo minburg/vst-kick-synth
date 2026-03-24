@@ -38,7 +38,9 @@ members = [
 
 [profile.release]
 lto = "thin"
-strip = true
+# strip = true intentionally removed: on MSVC targets Rust's strip can remove
+# .pdata/.xdata (SEH unwind tables) depending on the toolchain version, which
+# breaks C++ exception handling and causes an instant silent crash on load.
 
 [profile.dev.package."*"]
 opt-level = 3

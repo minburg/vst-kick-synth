@@ -47,6 +47,19 @@ fn main() {
             build.file(src);
         }
 
+        // When RUSTFLAGS contains -C target-feature=+crt-static (set in CI),
+        // Rust links the static MSVC CRT (/MT). The C++ objects compiled by
+        // cxx-build must use the same CRT variant; mixing /MT (Rust) with /MD
+        // (C++) in one binary causes heap corruption and runtime crashes.
+        let crt_static = std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc")
+            && std::env::var("CARGO_CFG_TARGET_FEATURE")
+                .unwrap_or_default()
+                .split(',')
+                .any(|f| f.trim() == "crt-static");
+        if crt_static {
+            build.flag("/MT");
+        }
+
         build
             .std("c++20")
             .define("NOMINMAX", None)

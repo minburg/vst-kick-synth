@@ -86,13 +86,61 @@ jobs:
 
       # Use pwsh + explicit CC/CXX=cl as a belt-and-suspenders guarantee that
       # the MSVC compiler is selected even if ilammy did not modify PATH fully.
+      # crt-static embeds the MSVC CRT (VCRUNTIME140*.dll, MSVCP140.dll) directly
+      # into the binary so it runs on any Windows machine without requiring the
+      # VC++ redistributable to be installed.
       - name: Build and Bundle (Windows)
         if: matrix.os == 'windows-latest'
         shell: pwsh
         env:
           CC: cl
           CXX: cl
+          RUSTFLAGS: "-C target-feature=+crt-static"
         run: cargo xtask bundle kick_synth --profile release
+
+      # Diagnostic: print the DLL import list so CI logs confirm no MinGW or
+      # MSVC runtime DLLs leak into the artifact.
+      - name: Verify binary dependencies (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          foreach ($bin in (Get-ChildItem "target\bundled" -Recurse -File | Where-Object { $_.Extension -in ".vst3",".exe" })) {
+            Write-Host "=== $($bin.Name) ==="
+            dumpbin.exe /DEPENDENTS $bin.FullName | Select-String "\.dll"
+          }
+
+      # Smoke test: run the standalone exe for up to 5 seconds and capture any
+      # output. A non-zero exit code or crash output here means the artifact is
+      # broken and the logs will show exactly why.
+      - name: Smoke test standalone exe (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        env:
+          RUST_BACKTRACE: "full"
+        run: |
+          $exe = Get-ChildItem "target\bundled" -Recurse -File -Filter "*.exe" | Select-Object -First 1
+          if (-not $exe) { Write-Host "No standalone exe found — skipping"; exit 0 }
+          Write-Host "Testing: $($exe.FullName)"
+          $psi = [System.Diagnostics.ProcessStartInfo]::new($exe.FullName)
+          $psi.RedirectStandardOutput = $true
+          $psi.RedirectStandardError  = $true
+          $psi.UseShellExecute        = $false
+          $proc = [System.Diagnostics.Process]::Start($psi)
+          $exited = $proc.WaitForExit(5000)
+          $stdout = $proc.StandardOutput.ReadToEnd()
+          $stderr = $proc.StandardError.ReadToEnd()
+          if (-not $exited) {
+            $proc.Kill()
+            Write-Host "EXIT: still running after 5s — binary appears healthy"
+          } else {
+            Write-Host "EXIT CODE: $($proc.ExitCode)"
+            if ($stdout) { Write-Host "STDOUT:`n$stdout" }
+            if ($stderr) { Write-Host "STDERR:`n$stderr" }
+            if ($proc.ExitCode -ne 0) {
+              Write-Host "Binary crashed or exited with error"
+              exit 1
+            }
+          }
 
       # --- MACOS: Build Audio Unit v2 wrapper via clap-wrapper ---
       - name: Install CMake and Ninja (macOS)
