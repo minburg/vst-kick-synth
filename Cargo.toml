@@ -10,7 +10,7 @@ homepage = "https://github.com/minburg/vst-kick-synth"
 crate-type = ["cdylib", "lib"]
 
 [dependencies]
-nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["standalone", "vst3", "clap"] }
+nih_plug = { git = "https://github.com/robbert-vdh/nih-plug.git", features = ["standalone", "vst3"] }
 nih_plug_vizia = { git = "https://github.com/robbert-vdh/nih-plug.git" }
 parking_lot = "0.12.5"
 rand = "0.10.0-rc.6"
