@@ -9,6 +9,9 @@ on:
 permissions:
   contents: write
 
+defaults:
+  run:
+    shell: bash
 
 jobs:
   package:
@@ -40,6 +43,18 @@ jobs:
         if: matrix.os == 'macos-latest'
         run: rustup target add x86_64-apple-darwin
 
+      # --- WINDOWS: ensure MSVC cl.exe is on PATH before the build ---
+      # Without this, Git Bash (the default shell) puts MinGW's gcc/g++ before
+      # MSVC's cl.exe, so cxx-build compiles NeuralAmpModelerCore with MinGW.
+      # The resulting DLL/exe then requires MinGW runtime DLLs
+      # (libgcc_s_seh-1.dll, libstdc++-6.dll, libwinpthread-1.dll) that are
+      # absent on stock Windows machines → instant silent crash on load.
+      - name: Set up MSVC environment (Windows)
+        if: matrix.os == 'windows-latest'
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
       - name: Build and Bundle (macOS universal)
         if: matrix.os == 'macos-latest'
         shell: bash
@@ -56,7 +71,7 @@ jobs:
             -output target/bundled/kick_synth.vst3/Contents/MacOS/kick_synth \
             target/x86_64-apple-darwin/release/libkick_synth.dylib \
             target/aarch64-apple-darwin/release/libkick_synth.dylib
-
+          
           # Stitch CLAP binary into a universal binary with lipo
           lipo -create \
             -output target/bundled/kick_synth.clap/Contents/MacOS/kick_synth \
@@ -69,9 +84,14 @@ jobs:
           codesign --force --deep -s - target/bundled/kick_synth.vst3
           codesign --force --deep -s - target/bundled/kick_synth.clap
 
+      # Use pwsh + explicit CC/CXX=cl as a belt-and-suspenders guarantee that
+      # the MSVC compiler is selected even if ilammy did not modify PATH fully.
       - name: Build and Bundle (Windows)
         if: matrix.os == 'windows-latest'
-        shell: bash
+        shell: pwsh
+        env:
+          CC: cl
+          CXX: cl
         run: cargo xtask bundle kick_synth --profile release
 
       # --- MACOS: Build Audio Unit v2 wrapper via clap-wrapper ---
